@@ -13,11 +13,13 @@ from urllib.request import getproxies
 from uuid import UUID
 
 from opendirector.agent.model_gateway import ModelGateway
-from opendirector.agent import cli_transport, deepseek
+from opendirector.agent import cli_transport, deepseek, windows_powershell
+from opendirector.agent.cli_discovery import cli_executable
 from opendirector.agent.context import RunContext
+from opendirector.agent.citations import search_sources
 from opendirector.agent.gateway import ToolGateway
 from opendirector.agent.process import terminate
-from opendirector.agent.tools import ROOT, SYSTEM
+from opendirector.agent.tools import ROOT, SUGGESTED_REPLIES, SYSTEM
 from opendirector.installation import BUNDLED
 from opendirector.agent.skill_snapshot import prepare_skills
 from opendirector.agent.directory_links import link_directory, unlink_directory
@@ -37,14 +39,19 @@ def executable(runtime: str) -> str | None:
                 return str(path)
         path = BUNDLED / 'bin' / ('opencode.exe' if os.name == 'nt' else 'opencode')
         return str(path) if path.is_file() else None
-    return shutil.which('dsh' if runtime == 'deepseek' else runtime)
+    return cli_executable('dsh' if runtime == 'deepseek' else runtime)
 
 
-_CODEX_ISOLATION: dict[str, tuple[str, ...]] = {}
+_CODEX_ISOLATION: dict[tuple[str, ...], tuple[str, ...]] = {}
 
 
-def codex_environment() -> dict[str, str]:
-    env = dict(os.environ)
+def codex_environment(base: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(os.environ if base is None else base)
+    if sys.platform == 'win32':
+        # This is an independent CLI launch, not a registered Desktop Core child.
+        # Inheriting the registration selects a runner that cannot start this CLI's shell.
+        env.pop('CODEX_WINDOWS_REGISTERED_CORE', None)
+        env.pop('CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY', None)
     if sys.platform == 'win32' and not (env.get('HTTPS_PROXY') or env.get('ALL_PROXY')):
         # A Windows system proxy need not be exported to the CLI process.
         if proxy := getproxies().get('https'):
@@ -52,25 +59,26 @@ def codex_environment() -> dict[str, str]:
     return env
 
 
-def codex_isolation_flags(binary: str) -> tuple[str, ...]:
+def codex_isolation_flags(binary: str | tuple[str, ...]) -> tuple[str, ...]:
     """Optional codex flags this CLI accepts.
 
     Isolation flags vary across releases, and an unsupported flag prevents the
     CLI from starting. Keep rollouts on disk so later turns can resume them.
     """
-    cached = _CODEX_ISOLATION.get(binary)
+    launcher = (binary,) if isinstance(binary, str) else binary
+    cached = _CODEX_ISOLATION.get(launcher)
     if cached is not None:
         return cached
     wanted = ('--ignore-user-config', '--ignore-rules')
     try:
-        probe = subprocess.run([binary, 'exec', '--help'], capture_output=True,
+        probe = subprocess.run([*launcher, 'exec', '--help'], capture_output=True,
                                timeout=20, stdin=subprocess.DEVNULL)
         # Help text can contain bytes outside the console code page.
         help_text = (probe.stdout + probe.stderr).decode('utf-8', 'replace')
     except (OSError, subprocess.SubprocessError):
         help_text = ''
     flags = tuple(flag for flag in wanted if flag in help_text)
-    _CODEX_ISOLATION[binary] = flags
+    _CODEX_ISOLATION[launcher] = flags
     return flags
 
 
@@ -91,8 +99,8 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
     if bundled:
         runtime = 'opencode'
     env = cli_transport.environment(work, socket, bridge_env)
-    if runtime == 'codex' and (proxy := codex_environment().get('HTTPS_PROXY')):
-        env['HTTPS_PROXY'] = proxy
+    if runtime == 'codex':
+        env = codex_environment(env)
     if runtime == 'opencode':
         config = {'autoupdate': False, 'default_agent': 'opendirector',
             'agent': {'opendirector': {'mode': 'primary', 'prompt': SYSTEM}},
@@ -102,6 +110,9 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
                 'skill': {'*': 'deny', **{item['name']: 'allow' for item in catalog}}},
             'mcp': {}}
         if bundled:
+            # OpenDirector owns conversation titles. The native title is unused
+            # and would submit a second paid model request on a fresh greeting.
+            config['agent']['title'] = {'disable': True}
             config['provider'] = {'opendirector': {'npm': '@ai-sdk/openai-compatible', 'name': 'OpenDirector',
                 'options': {'baseURL': model_url, 'apiKey': '{env:OPENDIRECTOR_MODEL_KEY}'},
                 'models': {model: {'name': model, 'modalities': {'input': input_modalities or ['text'], 'output': ['text']}}}}}
@@ -117,13 +128,17 @@ def command(runtime: str, work: Path, socket: str, token: str, model: str | None
         settings = ['features.shell_tool=true', 'features.apply_patch_freeform=false', 'web_search="disabled"',
             'sandbox_workspace_write.network_access=true',
             'skills.bundled.enabled=false', f'developer_instructions={json.dumps(SYSTEM)}']
+        if sys.platform == 'win32':
+            # --ignore-user-config also removes windows.sandbox. Without a
+            # Windows backend Codex downgrades workspace-write to read-only.
+            settings.append('windows.sandbox="elevated"')
         args = [binary, 'exec', '--json', '--skip-git-repo-check', *codex_isolation_flags(binary), '--sandbox', 'workspace-write']
         for setting in settings:
             args += ['-c', setting]
     else:
         plugin = work / 'plugin'
         (plugin / '.claude-plugin').mkdir(parents=True, exist_ok=True)
-        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.2'}))
+        (plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'name': 'opendirector', 'version': '0.1.6'}))
         skill_root = work / '.agents/skills'
         skill_root.mkdir(parents=True, exist_ok=True)
         unlink_directory(plugin / 'skills')
@@ -150,6 +165,8 @@ def text_events(runtime: str, raw: dict) -> list[dict]:
         return [{'type': 'delta', 'text': raw['part']['text']}]
     if runtime == 'codex' and raw['type'] == 'item.completed' and raw['item']['type'] == 'agent_message':
         return [{'type': 'delta', 'text': raw['item']['text']}]
+    if runtime == 'codex' and (sources := search_sources(raw)):
+        return [{'type': 'sources', 'sources': sources}]
     if runtime == 'claude' and raw['type'] == 'assistant':
         return [{'type': 'delta', 'text': part['text']} for part in raw['message']['content'] if part['type'] == 'text']
     return []
@@ -228,6 +245,8 @@ class NativeRuntime:
                         config['modelId'] if config else runtime_model, model_url, catalog, bridge_env=bridge_env,
                         **({'native_directory': native_work} if runtime == 'opencode' else {}),
                         **({'input_modalities': config.get('inputModalities', ['text'])} if run.runtime == 'default' else {}))
+                if runtime == 'opencode':
+                    await windows_powershell.configure_opencode(args[0], native_work, env, Path(temporary))
                 if thinking != 'auto' and runtime == 'codex':
                     args += ['-c', f'model_reasoning_effort={json.dumps(thinking)}']
                 elif thinking != 'auto' and runtime == 'claude':
@@ -239,10 +258,11 @@ class NativeRuntime:
                         args += ['--session' if runtime == 'opencode' else '--resume', session_id]
                 execution_context = (f'Execution directory: {work}\nNative session directory: {native_work}\n'
                     'Set the native shell workdir to this execution directory for file and media operations. '
-                    'Use inherited PATH to discover installed programs with command -v. '
+                    'Use inherited PATH to discover installed programs with Get-Command in PowerShell or command -v in POSIX shells. '
                     'Read source assets at their supplied absolute paths; do not move or modify them. '
                     'Write all intermediate files and outputs into the execution directory. '
-                    'Use opendirector --help to discover OpenDirector commands and opendirector <group> <command> --help for usage. Use opendirector for project changes.')
+                    'Use opendirector --help to discover OpenDirector commands and opendirector <group> <command> --help for usage. Use opendirector for project changes.\n'
+                    + SUGGESTED_REPLIES)
                 prompt = execution_context + '\n' + json.dumps(context[-1:] if session_id else context, ensure_ascii=False)
                 skill_instruction = ''
                 if selected:

@@ -1,5 +1,9 @@
 /** Model connection and service forms. */
 export const models = {
+  "models.protocolOption.bigmodelVideo": "智谱 BigModel 视频接口（CogVideoX-3）",
+  "models.service.bigmodelVideoSummary": "文生视频 / 单图生视频 / 首尾帧",
+  "models.service.bigmodelVideoReferences": "PNG 或 JPEG，单张最多 5 MB。提示词最多 512 字符；选择像素尺寸和 5 或 10 秒时长。",
+
   "models.service.proxyMode": "网络连接方式",
   "models.service.proxySystem": "跟随系统代理",
   "models.service.proxyDirect": "直连（不使用代理）",
@@ -52,6 +56,8 @@ export const models = {
   "models.service.providerApi": "服务商 API",
   "models.service.provider": "提供商",
   "models.service.url": "服务地址（Base URL）",
+  "models.service.urlPlaceholder": "输入服务的 API 根地址",
+  "models.service.modelPlaceholder": "输入服务中的模型 ID",
   "models.service.noKey": "无需密钥",
   "models.service.keyConfigured": "密钥已配置",
   "models.service.noAuthPlaceholder": "此服务无需鉴权",
@@ -62,12 +68,16 @@ export const models = {
   "models.service.hide": "隐藏",
   "models.service.show": "显示",
   "models.service.urlNote":
-    "自部署服务通常填写 /v1 地址；通过 SSH 隧道连接时填写本地转发地址。",
+    "填写服务提供的 API 根地址。",
+  "models.service.beijingWorkspaceUrl":
+    "使用北京地域的 API Key。如需使用业务空间专属地址，请将 https://<workspace-id>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 中的 <workspace-id> 替换为你的业务空间 ID。",
   "models.service.inputCapabilities": "输入能力",
   "models.service.referenceOutput": "参考与输出能力",
   "models.service.textInput": "文本",
   "models.service.imageInput": "图片理解",
-  "models.service.imageInputNote": "仅在该模型原生支持图片输入时启用。",
+  "models.service.videoInput": "视频理解",
+  "models.service.audioInput": "音频理解",
+  "models.service.mediaInputNote": "请按模型及其接口实际支持的输入类型勾选。",
   "models.service.officialSummary": "文生视频 / 首尾帧 / 多模态参考",
   "models.service.klingSummary": "文生视频 / 首尾帧 / 图片参考",
   "models.service.klingFlashSummary": "文生视频 / 首帧 / 图片参考",
@@ -86,6 +96,7 @@ export const models = {
   "models.service.videoAdapter": "视频适配方式",
   "models.service.adapterAuto": "自动识别已知模型；其他使用通用首帧接口",
   "models.service.adapterFastH3": "FastH3-Omni（8 步、多素材参考）",
+  "models.service.adapterFastH3Dual": "FastH3-Omni（首尾帧锚点）",
   "models.service.adapterMiniMaxH3": "原生 MiniMax-H3（首帧、素材参考、接续）",
   "models.service.adapterStandard": "通用 /videos（文本、单张首帧）",
   "models.service.loadPreset": "载入适配预设",
@@ -105,6 +116,7 @@ export const models = {
   "models.service.minimaxNote":
     "模型列表来自内置声明，载入不验证密钥，也不创建视频任务。",
   "models.service.save": "保存服务",
+  "models.service.saveAndContinue": "保存并继续",
   "models.service.testing": "测试中…",
   "models.service.testPassed": "通过 {seconds} s",
   "models.service.noOutputPreset":
@@ -118,6 +130,10 @@ export const models = {
   "models.protocolOption.videos": "异步 /videos 接口（含 vLLM-Omni）",
   "models.protocolOption.minimaxVideo": "MiniMax 官方视频 V2",
   "models.protocolOption.klingVideo": "可灵官方视频接口",
+  "models.protocolOption.higgsfieldOpen": "Higgsfield Open 接口",
+  "models.service.higgsfieldNote": "填写 Higgsfield Open 的 KEY_ID:KEY_SECRET。",
+  "models.service.higgsfieldSummary": "文生视频 / 首尾帧 / 图片、视频和音频参考",
+  "models.service.higgsfieldReferences": "参考：最多 10 张 JPEG/PNG/WebP/GIF 图片、5 段 MP4 视频和 5 段 WAV 音频。每段须为 2–30 秒，视频和音频各自总计不超过 30 秒。MOV 请先转换为 MP4，MP3 请先转换为 WAV。",
   "models.protocolOption.depth": "vLLM-Omni 深度接口（Video Depth Anything）",
   "models.protocolOption.tts": "OpenAI 兼容语音合成（含 vLLM-Omni TTS）",
   "models.protocolOption.volcengineAudio": "火山引擎语音 / Agent Plan",

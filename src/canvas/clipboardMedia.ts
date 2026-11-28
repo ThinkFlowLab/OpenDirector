@@ -1,3 +1,5 @@
+import { parseAssetSource } from "../backend/assetSource.ts";
+import { fetchMediaSource } from "../backend/creationClient.ts";
 import { MEDIA_FIELDS } from "./canvasArchive.ts";
 import type { CanvasResource } from "./model.ts";
 import type { CanvasFragment } from "./operations.ts";
@@ -42,7 +44,8 @@ export type RegisterMedia = (
 ) => Promise<RegisteredMedia>;
 
 const isTemporary = (value: unknown): value is string =>
-  typeof value === "string" && /^(blob|data):/i.test(value);
+  typeof value === "string" &&
+  (/^(blob|data):/i.test(value) || Boolean(parseAssetSource(value)));
 
 /** The saved asset a media field shows: a node's own source or a nested resource's. */
 function savedAssetId(
@@ -75,7 +78,7 @@ function visitMedia(
 }
 
 async function readBlob(src: string): Promise<Blob> {
-  const response = await fetch(src);
+  const response = await fetchMediaSource(src);
   if (!response.ok) throw new Error(tNow("errors.files.clipboardRead"));
   return response.blob();
 }
@@ -88,7 +91,7 @@ export function captureClipboardMedia(
     read = readBlob,
     resolve = () => undefined,
   }: {
-    read?: (src: string) => Promise<Blob>;
+    read?: (src: string, mimeType?: string) => Promise<Blob>;
     /** The saved asset behind a field, from its recorded ID or its preview URL. */
     resolve?: (
       src: string,
@@ -106,7 +109,7 @@ export function captureClipboardMedia(
           : undefined;
       if (saved && !sources.has(src)) sources.set(src, { projectId, ...saved });
       if (blobs.has(src)) return;
-      const pending = read(src);
+      const pending = read(src, key === "src" && typeof record.mimeType === "string" ? record.mimeType : undefined);
       // A failed read is reported by the paste that needs it.
       pending.catch(() => {});
       blobs.set(src, pending);

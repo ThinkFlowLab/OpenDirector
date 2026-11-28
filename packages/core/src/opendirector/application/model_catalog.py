@@ -11,6 +11,7 @@ from opendirector.domain.model_connection import connection_fields, model_fields
 from opendirector.domain.projects import ProjectError
 from opendirector.integrations.chat_completions import ChatCompletions, chat_payload
 from opendirector.integrations.model_capabilities import read_service_models, read_video_capabilities
+from opendirector.application.model_availability import ModelAvailability, requests_for
 
 
 _SAVED_KEY = '请填写该服务的 API Key；新地址不能复用原地址的密钥。'
@@ -32,12 +33,23 @@ def _reuse_saved_key(config, existing, *, require_key):
 class ModelCatalog:
     """Saved model configuration plus read-only service probes."""
 
-    def __init__(self, configs, tester=None):
+    def __init__(self, configs, tester=None, availability=None):
         self.configs = configs
         self.tester = tester or ChatCompletions()
+        self.availability = availability or ModelAvailability(configs)
 
     def list(self):
-        return self.configs.list()
+        return self.availability.catalog()
+
+    async def check_availability(self, kind, url, model_id, api_key, config_id=None, *, connection_type='api',
+                                 protocol=None, auth_mode=None, proxy_mode=None, video_adapter=None, capability_auto_check=None):
+        config = _draft(kind, url, model_id, api_key, connection_type, protocol, auth_mode, proxy_mode,
+                        videoAdapter=video_adapter or 'auto', _capability_namespace='draft')
+        if capability_auto_check is not None:
+            config['capabilityAutoCheck'] = capability_auto_check
+        config = await self._with_saved_key(config, config_id, kind, require_key=True, threaded=True)
+        await asyncio.to_thread(self.availability.prepare, config, manual=True)
+        return self.availability.model(config)
 
     def save(self, kind, url, model_id, api_key, config_id=None, **options):
         return self.configs.save(kind, url, model_id, api_key, config_id, **options)
@@ -74,9 +86,13 @@ class ModelCatalog:
         return list(dict.fromkeys(item['id'] for item in models))
 
     async def test_agent(self, url, model_id, api_key, config_id=None, *, connection_type='api', protocol=None,
-                         auth_mode=None, proxy_mode=None, timeout=AGENT_TEST_TIMEOUT_SECONDS):
-        config = _draft('agent', url, model_id, api_key, connection_type, protocol, auth_mode, proxy_mode)
+                         auth_mode=None, proxy_mode=None, timeout=AGENT_TEST_TIMEOUT_SECONDS, capability_auto_check=None):
+        config = _draft('agent', url, model_id, api_key, connection_type, protocol, auth_mode, proxy_mode, _capability_namespace='draft')
+        if capability_auto_check is not None:
+            config['capabilityAutoCheck'] = capability_auto_check
         config = await self._with_saved_key(config, config_id, 'agent', require_key=True, threaded=True)
+        await asyncio.to_thread(self.availability.prepare, config)
+        self.availability.require(config, requests_for(config, inputs={'text'})[0])
         payload = chat_payload(config, [{'role': 'user', 'content': 'Reply with OK only.'}], 'auto')
         payload['max_tokens'] = 1024
         started = time.monotonic()

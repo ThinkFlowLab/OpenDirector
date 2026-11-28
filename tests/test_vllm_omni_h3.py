@@ -9,19 +9,27 @@ import subprocess
 from uuid import uuid4
 
 import httpx
+from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_tool_assets import CreationToolAssets
-from generation_helpers import new_project, prepared as prepare_command, tasks
+from opendirector.application.model_availability import ModelAvailability
+from generation_helpers import new_project, command as generation_command, prepared as prepare_command, tasks
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.providers import GenerationProviders
-from opendirector.integrations.vllm_omni import VllmOmniGeneration, h3_frames
+from opendirector.integrations.capability_probe import CapabilityProbe
+from opendirector.integrations.vllm_omni import VllmOmniGeneration, video_frame_parameters
 from opendirector.integrations.volcengine import VolcengineGeneration
+from test_model_availability import document
+from opendirector_api.main import create_app
+
+
+pytestmark = pytest.mark.cpu
 
 H3 = {'protocol': 'vllm_omni', 'kind': 'video', 'url': 'http://gpu-box:8000/v1', 'modelId': 'MiniMaxAI/MiniMax-H3', 'apiKey': 'token'}
 
@@ -68,9 +76,9 @@ def test_h3_profile_follows_the_served_model_on_any_host():
     assert providers._profile_adapter({**H3, 'url': 'https://ark.cn-beijing.volces.com/api/plan/v3', 'modelId': 'doubao-seedance-2.0'}) is None
 
 
-@pytest.mark.parametrize('seconds,frames', [(5, 124), (1, 107), (4, 107), (10, 243), (60, 345)])
-def test_lengths_snap_to_the_h3_frame_grid(seconds, frames):
-    assert h3_frames(seconds) == frames
+@pytest.mark.parametrize('seconds,frames', [(4, 96), (107 / 24, 107), (4.5, 108), (5, 120), (10, 240), (14.375, 345), (15, 360), (124.5 / 24, 124)])
+def test_seconds_convert_to_requested_frames(seconds, frames):
+    assert video_frame_parameters(seconds) == {'fps': 24, 'num_frames': frames}
 
 
 def prepared(images=(), audios=(), continue_from=None, size=None):
@@ -91,7 +99,7 @@ def test_request_form_per_mode(mode, refs, extra, files):
     assert json.loads(fields['extra_params']) == extra
     assert fields['model'] == 'MiniMaxAI/MiniMax-H3' and fields['fps'] == '24'
     assert [(name, upload[0], upload[2]) for name, upload in uploads] == files
-    assert fields['num_frames'] == '124' and 'quality' not in fields
+    assert fields['num_frames'] == '120' and 'quality' not in fields
     assert fields.get('size') == ('1344x768' if mode == 'continuation' else None)
 
 
@@ -140,6 +148,11 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
     server = FakeOmni(clip.read_bytes())
     configs = ModelConfigs(store.local.repository)
     config = configs.save('video', H3['url'], H3['modelId'], 'token', connection_type='self_hosted', protocol='vllm_omni', auth_mode='bearer')
+    declaration = document('video_generation', 'text_to_video', '/v1/videos', 'video', model=H3['modelId'])
+    operation = declaration['models'][0]['operations']['video_generation']
+    operation['profiles'].append({'id': 'video_to_video', 'support': 'unsupported'})
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+    availability = ModelAvailability(configs, probe)
 
     async def generate(inputs):
         parameters = dict(videoMode=inputs['videoMode'])
@@ -151,17 +164,45 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
 
     async def run():
         nonlocal manager
-        manager = CreationGeneration(store, configs)
+        manager = CreationGeneration(store, configs, availability=availability)
         manager.provider = GenerationProviders(manager.store, httpx.MockTransport(server), poll_interval=0)
         first = await generate({'prompt': '灯塔在黄昏亮起', 'referenceIds': [], 'videoMode': 'first_frame'})
         assert first['status'] == 'succeeded' and first['externalTaskId'] == 'video_gen_1', (first['error'], first['errorDetails'])
         assert json.loads(server.posts[0][0]['extra_params']) == {'task': 't2va', 'aspect_ratio': '16:9'}
 
+        # The public command API cannot accept a cached continuation on a
+        # globally disabled endpoint, even without a declared input profile.
+        declaration['routes'][0]['exposure'] = 'disabled'
+        command = generation_command((store, value['id'], session), config,
+            prompt='关闭接口时接续', parameters={'videoMode': 'continuation'}, references=[first['assetId']])
+        api_probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+        try:
+            app = create_app(store.local, generation_provider=manager.provider, capability_probe=api_probe)
+            with TestClient(app, headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
+                response = client.post(f"/api/creation/projects/{value['id']}/commands", json=command.model_dump(mode='json'))
+                assert response.status_code == 200, response.text
+                receipt = response.json()
+                assert receipt['status'] == 'rejected', receipt
+                assert receipt['issues'][0]['code'] == 'capability_unavailable'
+            assert len(store.snapshot(value['id']).jobs) == len(server.posts) == 1
+        finally:
+            api_probe.close()
+        declaration['routes'][0]['exposure'] = 'enabled'
+
+        # A fresh deployment pause still prevents a continuation on /videos.
+        operation['execution']['state'] = 'paused'
+        availability.refresh([config['id']], manual=True)
+        with pytest.raises(ProjectError, match='服务已暂停'):
+            await generate({'prompt': '暂停期间接续', 'referenceIds': [first['assetId']], 'videoMode': 'continuation'})
+        assert len(store.snapshot(value['id']).jobs) == len(server.posts) == 1
+        operation['execution']['state'] = 'unpaused'
+        availability.refresh([config['id']], manual=True)
+
         second = await generate({'prompt': '光束扫过海面', 'referenceIds': [first['assetId']], 'videoMode': 'continuation'})
         assert second['status'] == 'succeeded' and second['videoMode'] == 'continuation', (second['error'], second['errorDetails'])
         fields, files = server.posts[1]
         assert json.loads(fields['extra_params']) == {'task': 't2va', 'continue_from': 'video_gen_1'}
-        assert (fields['size'], fields['num_frames']) == ('64x48', '124') and files == []
+        assert (fields['size'], fields['num_frames']) == ('64x48', '120') and files == []
         reference = store.snapshot(value['id']).jobs[-1].inputSnapshot.references[0]
         assert reference.role == 'continuation' and reference.transmission == 'latent'
         assert str(reference.asset.assetId) == first['assetId']
@@ -179,7 +220,10 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
         await manager.close()
 
     manager = None
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    finally:
+        probe.close()
 
 
 def test_other_models_keep_rejecting_video_references(project):
@@ -211,7 +255,7 @@ def test_requested_length_and_canvas_reach_the_h3_request(project, tmp_path):
         intent = store.snapshot(value['id']).generationSpecs[-1]
         assert intent.parameters.durationSeconds == 10 and intent.prompt == '雨夜街头'
         fields, _ = server.posts[0]
-        assert fields['num_frames'] == str(h3_frames(10))
+        assert fields['num_frames'] == '240'
         assert fields['size'] == '480x832' and json.loads(fields['extra_params']) == {'task': 't2va'}
         await manager.close()
     asyncio.run(run())

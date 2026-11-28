@@ -96,7 +96,7 @@ def durable_json(path: Path, value):
     sync_directory(path.parent)
 
 
-def object_changes(before, after, command):
+def object_changes(before, after, command, *, derived_canvas=frozenset()):
     """The storage boundary also checks revisions on trusted service writes."""
     old = object_index(before) if before else {}
     new = object_index(after)
@@ -107,7 +107,8 @@ def object_changes(before, after, command):
         if previous == current:
             continue
         kind, object_id = key
-        if previous is not None and expected.get(key) != previous.revision:
+        derived = kind == 'canvas_item' and object_id in derived_canvas
+        if previous is not None and not derived and expected.get(key) != previous.revision:
             raise ContractError('revision_conflict', 'Every changed object requires its current version', object_id)
         if current is not None and current.revision != (previous.revision + 1 if previous else 1):
             raise ContractError('revision_conflict', 'Object revisions must advance exactly once', object_id)

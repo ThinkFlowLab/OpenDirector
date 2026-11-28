@@ -1,4 +1,4 @@
-import { creationClient } from "./creationClient.ts";
+import { creationClient, currentAsset } from "./creationClient.ts";
 import type { Asset, ProjectSnapshot } from "../contracts/generated.ts";
 import type { GenerationJob } from "../canvas/generationHistory.ts";
 import {
@@ -38,12 +38,21 @@ export function creationJobs(
           item.binding.role === "material" &&
           item.binding.objectRef.assetId === asset.id,
       );
+    const origin = snapshot.canvasItems.find((item) => item.id === job.originItemId);
+    const delivered =
+      job.status === "succeeded" &&
+      asset &&
+      origin &&
+      currentAsset(snapshot, origin)?.id === asset.id
+        ? asset.id
+        : undefined;
     const phase = generationPhase(job);
     const failureMessage = job.errorDetails
       ? generationFailureMessage(job.errorDetails)
       : undefined;
     return {
       id: job.id,
+      revision: job.revision,
       nodeId: job.originItemId ?? spec.id,
       title: spec.prompt.slice(0, 60) || tNow("errors.backend.generationTask"),
       taskId: job.id,
@@ -55,7 +64,16 @@ export function creationJobs(
       createdAt: job.createdAt ? Date.parse(job.createdAt) : undefined,
       durationKey: `generate:${spec.kind}:${job.inputSnapshot.model.modelConfigId}`,
       outputKind: spec.kind,
+      videoDuration: job.execution.kind === "video"
+        ? {
+            requestedSeconds: job.execution.durationSeconds ?? undefined,
+            resultSeconds: asset?.kind === "video"
+              ? asset.metadata.durationSeconds ?? undefined
+              : undefined,
+          }
+        : undefined,
       activityPhase: phase ?? undefined,
+      ...(delivered ? { deliveredAssetId: delivered } : {}),
       preview:
         preview ??
         (asset ? { assetId: asset.id, state: "pending" } : undefined),

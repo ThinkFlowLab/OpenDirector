@@ -6,6 +6,7 @@ import {
   type CanvasNode,
 } from "../src/canvas/model.ts";
 import { generationDefaults } from "../src/canvas/generationCatalog.ts";
+import { newNodeGenerationSettings } from "../src/canvas/modelResolution.ts";
 import { appendServiceResults } from "../src/canvas/linkedResults.ts";
 import { isGenerationSettings } from "../src/canvas/dataBoundary.ts";
 import {
@@ -13,9 +14,43 @@ import {
   backendReferenceIssue,
   backendReferences,
   backendVideoMode,
+  referenceBudgetIssue,
+  hasImplicitTextPrompt,
   isGenerationModel,
+  serviceGenerationSettings,
   type ModelConfig,
 } from "../src/backend/rules.ts";
+import { failedAvailability } from "../src/backend/availability.ts";
+import { setActiveLocale } from "../src/i18n/messages.ts";
+
+test("fresh service counts validate transmitted images without rewriting saved rules", () => {
+  const configured = config("image", {
+    profile: "openai-image", allowedKinds: ["text", "image"], maxImages: 4,
+    imageOutputs: [{ aspectRatio: "1:1", size: "768x768" }],
+  });
+  const now = Date.now();
+  configured.availability = {
+    configId: configured.id, modelId: configured.modelId, identity: "fresh-count",
+    autoCheck: false, status: "available", reasonCode: "supported", checkedAt: now,
+    expiresAt: now + 30000, revision: "test", operations: [{
+      operation: "image_edit", profile: "images_to_image", method: "POST", path: "/v1/images/edits", output: "image",
+      status: "available", reasonCode: "supported", checkedAt: now, expiresAt: now + 30000,
+      declaration: { status: "available", reasonCode: "supported", checkedAt: now, expiresAt: now + 30000 },
+      inputDetails: [{ name: "image", source: "service", support: "supported", minCount: 1, maxCount: 2,
+        min: null, max: null, multipleOf: null, values: null }],
+    }],
+  };
+  const settings = serviceGenerationSettings({ ...generationDefaults("image"), modelConfigId: configured.id, prompt: "Keep the draft" }, configured);
+  const references = [media("image"), media("image"), media("image")];
+  setActiveLocale("zh-CN");
+  assert.equal(backendBlocker(settings, references, [configured]), "最多支持 2 张图片，当前为 3 张。");
+  setActiveLocale("en-US");
+  assert.equal(backendBlocker(settings, references, [configured]), "Up to 2 images; 3 added.");
+  configured.availability = failedAvailability(configured.availability);
+  assert.equal(backendBlocker(settings, references, [configured]), null);
+  assert.equal(configured.inputRules.maxImages, 4);
+  setActiveLocale("zh-CN");
+});
 
 const config = (
   kind: ModelConfig["kind"],
@@ -58,6 +93,35 @@ const video = (patch: object) => ({
   prompt: "雨夜街头",
   durationSeconds: 5,
   ...patch,
+});
+
+test("MAGI-2 keeps ordinary image references, optional media prompts and native clip budgets", () => {
+  const magi = { ...config("video", {
+    profile: "higgsfield-magi-2", maxImages: 10, maxVideos: 5, maxAudios: 5,
+    videoModes: ["first_frame", "reference"], frameRoles: ["first_frame", "last_frame"],
+    audioReferenceStandalone: true, generateAudioOptions: [true, false],
+    referenceMediaMinSeconds: 2, referenceMediaSeconds: 30, audioBytes: 15 * 1024 * 1024,
+    videoCapabilities: { outputs: [{ resolution: "1080P", durations: [4, 5, 30] }], defaultResolution: "1080P", defaultDuration: 5, dimensionStep: 2 },
+    outputResolutions: ["1080P"],
+  }), protocol: "higgsfield_open" as const };
+  const settings = { ...video({ videoMode: "reference", prompt: "", audioEnabled: false, resolution: "1080P" }), modelConfigId: magi.id };
+  assert.equal(newNodeGenerationSettings("video", [magi]).durationSeconds, 5);
+  assert.equal(serviceGenerationSettings({ ...settings, durationSeconds: 4 }, magi).durationSeconds, 4);
+  const image = media("image");
+  assert.equal(backendBlocker(settings, [image], [magi]), null);
+  assert.equal(backendVideoMode(settings, backendReferences(settings, [image], magi), magi), "reference");
+  assert.ok(backendBlocker(settings, [], [magi]));
+  const clip = media("video"), sound = media("audio");
+  clip.data.media = { durationSeconds: 30 };
+  sound.data.media = { durationSeconds: 30 };
+  assert.equal(referenceBudgetIssue([clip, sound], magi, settings), null);
+  sound.data.media.durationSeconds = 1.9;
+  setActiveLocale("en-US");
+  assert.match(referenceBudgetIssue([clip, sound], magi, settings)!, /2–30 seconds/);
+  setActiveLocale("zh-CN");
+  assert.match(referenceBudgetIssue([clip, sound], magi, settings)!, /2–30 秒/);
+  sound.data.media.durationSeconds = 30.01;
+  assert.ok(referenceBudgetIssue([sound], magi, settings));
 });
 
 test("SAM stays tool-only in both media categories and legacy vision configurations", () => {
@@ -103,6 +167,37 @@ test("text-only reference requests become text-to-video", () => {
   const references = backendReferences(settings, [image], h3);
   assert.equal(backendVideoMode(settings, references), "reference");
   assert.equal(backendBlocker(settings, [image], [h3]), null);
+});
+
+test("a connected text reference implicitly supplies a blank image or video prompt", () => {
+  const brief = createNode("text", undefined, { title: "用例", text: "雨夜街头" });
+  const blank = createNode("text", undefined, { title: "空白", text: "  " });
+  const textImage = { ...zimage, id: crypto.randomUUID() };
+  const image = { ...generationDefaults("image"), modelConfigId: textImage.id, resolution: "auto", prompt: "" };
+  for (const [settings, model] of [
+    [image, textImage],
+    [video({ prompt: "" }), h3],
+    [video({ prompt: "", videoMode: "reference" }), h3],
+  ] as const) {
+    assert.equal(hasImplicitTextPrompt(settings, [brief], model), true);
+    assert.equal(backendBlocker(settings, [brief], [model]), null);
+    assert.equal(backendBlocker(settings, [brief], [model], []), null);
+    assert.equal(backendBlocker(settings, [], [model], [brief]), null);
+    // Without usable text the prompt is still required.
+    assert.equal(hasImplicitTextPrompt(settings, [blank], model), false);
+    assert.match(backendBlocker(settings, [], [model])!, /请输入生成要求/);
+  }
+  // A media-only reference never stands in for the prompt.
+  assert.match(backendBlocker(video({ prompt: "" }), [media("image")], [h3])!, /请输入生成要求/);
+  // A model that cannot take text references keeps requiring a prompt.
+  const imageOnly = config("image", { profile: "vllm-omni-image", allowedKinds: ["image"], maxImages: 4, videoModes: [] });
+  const imageOnlySettings = { ...image, modelConfigId: imageOnly.id };
+  assert.equal(hasImplicitTextPrompt(imageOnlySettings, [brief], imageOnly), false);
+  // Speech and music never read text references.
+  const speech = config("audio", { profile: "compatible", allowedKinds: ["text"], maxImages: 0, maxAudios: 0, videoModes: [] });
+  const audio = { ...generationDefaults("audio"), modelConfigId: speech.id, prompt: "" };
+  assert.equal(hasImplicitTextPrompt(audio, [brief], speech), false);
+  assert.match(backendBlocker(audio, [brief], [speech])!, /请输入要合成的文字/);
 });
 
 test("subjects supply compatible real resources and retain source identity for evidence", () => {
@@ -296,4 +391,81 @@ test("FastH3 preserves supported reference mode for text-only generation", () =>
   const settings = video({ videoMode: "reference" });
   assert.equal(backendVideoMode(settings, [], fast), "reference");
   assert.equal(backendBlocker(settings, [], [fast]), null);
+});
+
+test("reading service keeps unsupported kinds distinct from unused allowed references", () => {
+  const speech = {
+    ...config("audio", {
+      profile: "openai-speech",
+      allowedKinds: [],
+      maxImages: 0,
+      maxVideos: 0,
+      maxAudios: 0,
+      videoModes: [],
+    }),
+    protocol: "openai" as const,
+    modelId: "seed-tts-2.0",
+  };
+  const settings = {
+    ...generationDefaults("audio"),
+    modelConfigId: speech.id,
+    audioMode: "tts" as const,
+    prompt: "朗读这段文字",
+  };
+  const image = media("image");
+  const video = media("video");
+  assert.match(backendReferenceIssue(image, settings, speech)!, /不接收/);
+  assert.doesNotMatch(backendReferenceIssue(image, settings, speech)!, /不使用该参考/);
+  assert.match(backendReferenceIssue(video, settings, speech)!, /视频参考/);
+  assert.doesNotMatch(backendReferenceIssue(video, settings, speech)!, /不使用该参考/);
+  assert.deepEqual(backendReferences(settings, [image, video], speech), []);
+
+  const speechWithImage = {
+    ...speech,
+    inputRules: { ...speech.inputRules, allowedKinds: ["image" as const], maxImages: 1 },
+  };
+  assert.match(backendReferenceIssue(image, settings, speechWithImage)!, /不使用该参考/);
+  assert.match(backendReferenceIssue(video, settings, speechWithImage)!, /视频参考/);
+  assert.doesNotMatch(backendReferenceIssue(video, settings, speechWithImage)!, /不使用该参考/);
+  assert.deepEqual(backendReferences(settings, [image], speechWithImage), []);
+});
+
+test("structure control sends exactly one video as the control and keeps it out of video references", () => {
+  const fasth3 = config("video", {
+    profile: "fasth3-omni",
+    allowedKinds: ["text", "image", "video", "audio"],
+    maxImages: 9,
+    maxVideos: 3,
+    maxAudios: 3,
+    videoModes: ["reference", "control"],
+    outputResolutions: ["480P", "768P"],
+    videoCapabilities: {
+      outputs: [{ resolution: "480P", durations: [5] }],
+      defaultResolution: "480P",
+      defaultDuration: 5,
+      dimensionStep: 32,
+    },
+  });
+  const settings = { ...video({ videoMode: "control", resolution: "auto" }), modelConfigId: fasth3.id };
+  const depth = media("video");
+  const costume = media("image");
+  assert.match(backendBlocker(settings, [costume], [fasth3])!, /控制视频/);
+  assert.equal(backendBlocker(settings, [depth, costume], [fasth3]), null);
+  assert.equal(
+    backendBlocker({ ...settings, durationSeconds: 8 }, [depth, costume], [fasth3]),
+    null,
+  );
+  assert.deepEqual(
+    backendReferences(settings, [depth, costume], fasth3).map((item) => item.role),
+    ["control", "reference"],
+  );
+  assert.match(backendBlocker(settings, [depth, media("video")], [fasth3])!, /控制视频/);
+  assert.match(backendReferenceIssue(media("audio"), settings, fasth3)!, /音频/);
+  assert.equal(backendVideoMode(settings, backendReferences(settings, [depth], fasth3), fasth3), "control");
+  assert.equal(isGenerationSettings(settings), true);
+  // A model without the mode falls back to reference mode references.
+  assert.deepEqual(
+    backendReferences(video({ videoMode: "reference" }), [depth], fasth3).map((item) => item.role),
+    ["reference"],
+  );
 });

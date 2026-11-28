@@ -20,6 +20,7 @@ import {
   createNode,
 } from "../src/canvas/model.ts";
 import type { ModelConfig } from "../src/backend/rules.ts";
+import { presetImageTitles } from "../src/canvas/promptSkill.ts";
 import {
   authorFlowChanges,
   canvasKeyAction,
@@ -28,6 +29,7 @@ import {
   droppedConnectionTarget,
   mergeFlowSelection,
   placeCreatedNode,
+  presetReferenceSources,
   serviceGenerationPlan,
   textGenerationPlan,
 } from "../src/canvas/workspaceInteraction.ts";
@@ -299,6 +301,33 @@ test("canvas shortcuts map to history, selection, import, and nudges", () => {
   assert.deepEqual(undo(history).present.nodes[0]!.position, { x: 5, y: 6 });
 });
 
+test("image generation can submit with just a preset and keeps its draft prompt empty", () => {
+  const image = model("image");
+  const node = createNode("image", undefined, {
+    settings: {
+      ...generationDefaults("image"),
+      modelConfigId: image.id,
+      imagePreset: "four-view",
+      resolution: "auto",
+      aspectRatio: "auto",
+    },
+  });
+  const input = {
+    document: createDocument(),
+    node,
+    incoming: [],
+    models: [image],
+    assets: [],
+  };
+  assert.equal(serviceGenerationPlan(input).status, "blocked");
+  const plan = serviceGenerationPlan({
+    ...input,
+    promptPrefix: "Generate a character four-view sheet.",
+  });
+  assert.equal(plan.status, "ready", plan.status === "blocked" ? (plan.message ?? "") : "");
+  if (plan.status === "ready") assert.equal(plan.request.prompt, "");
+});
+
 test("generation submission marks unused inputs context-only and keeps one audio run", () => {
   const video = model("video");
   const first = ready("image");
@@ -414,6 +443,87 @@ test("generation submission marks unused inputs context-only and keeps one audio
       }),
     /固定参考元数据/,
   );
+});
+
+test("run-before precheck counts pinned images that have no follow node", () => {
+  const image = model("image", { maxImages: 8, allowedKinds: ["text", "image"] });
+  const pins = Array.from({ length: 9 }, (_, index) => ({
+    id: `pin-${index}`,
+    kind: "image" as const,
+  }));
+  const pinnedNode = (count: number) =>
+    createNode("image", undefined, {
+      prompt: "海边短片",
+      promptContent: [
+        { type: "text", text: "海边短片" },
+        ...pins.slice(0, count).map((pin, index) => ({
+          type: "reference" as const,
+          binding: "asset" as const,
+          assetId: pin.id,
+          name: `参考${index}`,
+          fingerprint: `fp-${index}`,
+        })),
+      ],
+      settings: {
+        ...generationDefaults("image"),
+        modelConfigId: image.id,
+        prompt: "海边短片",
+        resolution: "auto",
+        aspectRatio: "auto",
+      },
+    });
+  const overNode = pinnedNode(9);
+  const over = serviceGenerationPlan({
+    document: { ...createDocument("预检"), nodes: [overNode] },
+    node: overNode,
+    incoming: [],
+    models: [image],
+    assets: pins,
+  });
+  assert.equal(over.status, "blocked");
+  if (over.status === "blocked")
+    assert.equal(over.message, "参考图片超过当前模型上限（8 个）。");
+
+  const withinNode = pinnedNode(8);
+  const within = serviceGenerationPlan({
+    document: { ...createDocument("预检"), nodes: [withinNode] },
+    node: withinNode,
+    incoming: [],
+    models: [image],
+    assets: pins.slice(0, 8),
+  });
+  assert.equal(within.status, "ready");
+
+  // A follow node that is the same asset as one pin must not be counted twice.
+  const follow = ready("image", { backendAssetId: "pin-0", title: "同一张" });
+  const mixedNode = pinnedNode(8);
+  const mixed = serviceGenerationPlan({
+    document: { ...createDocument("预检"), nodes: [follow, mixedNode] },
+    node: mixedNode,
+    incoming: [follow],
+    models: [image],
+    assets: pins.slice(0, 8),
+  });
+  assert.equal(mixed.status, "ready");
+  const sources = presetReferenceSources({
+    node: mixedNode,
+    incoming: [follow],
+    assets: pins.slice(0, 8),
+  });
+  assert.ok(mixedNode.data.settings);
+  assert.equal(presetImageTitles(mixedNode.data.settings, sources, image).length, 8);
+
+  const distinctFollow = ready("image", { backendAssetId: "follow-extra" });
+  const overflow = serviceGenerationPlan({
+    document: { ...createDocument("预检"), nodes: [distinctFollow, mixedNode] },
+    node: mixedNode,
+    incoming: [distinctFollow],
+    models: [image],
+    assets: pins.slice(0, 8),
+  });
+  assert.equal(overflow.status, "blocked");
+  if (overflow.status === "blocked")
+    assert.equal(overflow.message, "参考图片超过当前模型上限（8 个）。");
 });
 
 test("a text node submits its agent settings and refuses to run without one", () => {

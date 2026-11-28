@@ -1,7 +1,9 @@
 import {
   useMemo,
   useReducer,
+  useRef,
   type Dispatch,
+  type RefObject,
   type SetStateAction,
 } from "react";
 import type { ModelSelections } from "../../backend/chat.ts";
@@ -13,6 +15,7 @@ import type { SubjectMediaSlot } from "../subjectMedia.ts";
 import type { CanvasToolId, ToolParameters } from "../toolCatalog.ts";
 import type { SubjectImportTab } from "../library/SubjectImportDialog.tsx";
 import type { PortSide } from "../connectionPorts.ts";
+import type { SettingsModelKind } from "../ModelServiceForm.tsx";
 
 export type WorkspacePanel = "assets" | "search" | "history" | null;
 
@@ -118,6 +121,7 @@ export type WorkspaceState = {
   settingsOpen: boolean;
   businessHistory: { undo: boolean; redo: boolean };
   settingsCategory: "general" | "models";
+  settingsModelKind: SettingsModelKind | null;
   welcomeOpen: boolean;
   activeGenerations: ActiveGeneration[];
   arrivingNodes: ReadonlySet<string>;
@@ -187,6 +191,7 @@ const workspaceKeys = [
   "settingsOpen",
   "businessHistory",
   "settingsCategory",
+  "settingsModelKind",
   "welcomeOpen",
   "activeGenerations",
   "arrivingNodes",
@@ -247,6 +252,7 @@ export function createWorkspaceState(): WorkspaceState {
     settingsOpen: false,
     businessHistory: { undo: false, redo: false },
     settingsCategory: "general",
+    settingsModelKind: null,
     welcomeOpen: false,
     activeGenerations: [],
     arrivingNodes: new Set(),
@@ -288,12 +294,32 @@ export function workspaceSetters(
   ) as WorkspaceSetters;
 }
 
-export function useWorkspaceStore(): WorkspaceState & WorkspaceSetters {
+export function useWorkspaceStore(): WorkspaceState & WorkspaceSetters & {
+  historyWriteVersion: RefObject<number>;
+  historyRenderVersion: number;
+} {
   const [state, dispatch] = useReducer(
     workspaceReducer,
     undefined,
     createWorkspaceState,
   );
-  const setters = useMemo(() => workspaceSetters(dispatch), [dispatch]);
-  return { ...state, ...setters };
+  const historyWriteVersion = useRef(0);
+  const [historyRenderVersion, advanceHistoryVersion] = useReducer(
+    (version: number) => version + 1,
+    0,
+  );
+  const setters = useMemo(() => {
+    const setters = workspaceSetters(dispatch);
+    return {
+      ...setters,
+      setHistory: (value: SetStateAction<CanvasHistory>) => {
+        // An async refresh must see this write before React renders it.
+        historyWriteVersion.current++;
+        setters.setHistory(value);
+        // Also render no-op writes so deferred refreshes can resume.
+        advanceHistoryVersion();
+      },
+    };
+  }, [dispatch, advanceHistoryVersion]);
+  return { ...state, ...setters, historyWriteVersion, historyRenderVersion };
 }

@@ -1,9 +1,11 @@
 import { createContext, type MouseEvent } from "react";
 import type { CanvasNode, CanvasNodeData } from "./model";
 import type { NodeGenerationActivity } from "./generationActivity";
+import type { TextSelections } from "./TextNodeEditor";
 import type { SubjectMediaSlot } from "./subjectMedia.ts";
 
 export interface CanvasActions {
+  readOnly?: boolean;
   select: (id: string, event: MouseEvent) => void;
   reopenComposer: (id: string, event: MouseEvent) => void;
   update: (id: string, data: Partial<CanvasNodeData>) => void;
@@ -20,6 +22,9 @@ export interface CanvasActions {
   contextMenu: (id: string, event: MouseEvent) => void;
   beginEdit?: (id: string) => void;
   endEdit?: (id: string) => void;
+  beginResize: () => void;
+  endResize: () => void;
+  textSelections: TextSelections;
   isTextEditing: (id: string) => boolean;
   finishTextEdit: () => void;
   edit: (id: string) => void;

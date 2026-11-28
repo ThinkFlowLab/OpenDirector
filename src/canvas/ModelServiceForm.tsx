@@ -1,5 +1,6 @@
+import { DraftAvailabilityCheck } from "./DraftAvailabilityCheck";
 import { ProviderPicker } from "./ProviderPicker";
-import { useId, useState, type FormEvent } from "react";
+import { useId, useLayoutEffect, useState, type FormEvent, type Ref } from "react";
 import { errorMessage } from "../backend/api.ts";
 import {
   MODEL_KINDS,
@@ -24,6 +25,7 @@ import { CanvasIcon } from "./CanvasIcon";
 import { ModelPicker, type ModelTestResult } from "./ModelPicker";
 import { useT } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/types";
+import { firstRunModelKind, type FirstRunCapability } from "./firstRunModels";
 
 export type SettingsModelKind = Exclude<ModelKind, "vision">;
 const PROTOCOLS: Record<
@@ -40,6 +42,8 @@ const PROTOCOLS: Record<
     ["vllm_omni", "models.protocolOption.videos"],
     ["minimax_video_v2", "models.protocolOption.minimaxVideo"],
     ["kling_video", "models.protocolOption.klingVideo"],
+    ["higgsfield_open", "models.protocolOption.higgsfieldOpen"],
+    ["bigmodel_video", "models.protocolOption.bigmodelVideo"],
     ["volcengine", "models.protocolOption.volcengine"],
     ["vllm_omni_segmentation", "models.protocolOption.segmentation"],
     ["vllm_omni_depth", "models.protocolOption.depth"],
@@ -52,39 +56,29 @@ const PROTOCOLS: Record<
   ],
 };
 
-const PLACEHOLDERS: Record<ModelKind, [string, string]> = {
-  agent: ["http://127.0.0.1:8100/v1", "Qwen/Qwen3-30B-A3B"],
-  image: ["http://127.0.0.1:8200/v1", "Tongyi-MAI/Z-Image-Turbo"],
-  video: ["http://127.0.0.1:8010/v1", "MiniMaxAI/MiniMax-H3"],
-  audio: ["http://127.0.0.1:8220/v1", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"],
-  vision: ["http://127.0.0.1:8230/v1", "facebook/sam3"],
-};
-const MUSIC_PLACEHOLDERS: [string, string] = [
-  "http://127.0.0.1:8240/v1",
-  "m-a-p/YuE2-3B",
-];
-const SCORE_PLACEHOLDERS: [string, string] = [
-  "http://127.0.0.1:8260/v1",
-  "m-a-p/SheetSage2",
-];
-const DEPTH_PLACEHOLDERS: [string, string] = [
-  "http://127.0.0.1:8250/v1",
-  "depth-anything/Video-Depth-Anything-Small",
-];
-
 export function ModelServiceForm({
   kind,
   existing,
   catalog,
+  capability,
   onClose,
+  onSaved,
+  cancelButtonRef,
+  onLockChange,
 }: {
   kind: SettingsModelKind;
   existing?: ModelConfig;
   catalog: BackendModels;
+  capability?: FirstRunCapability;
   onClose: () => void;
+  onSaved?: (models: ModelConfig[]) => void;
+  cancelButtonRef?: Ref<HTMLButtonElement>;
+  onLockChange?: (capability: FirstRunCapability, locked: boolean) => void;
 }) {
   const t = useT();
   const connectionFieldId = useId();
+  const audioPreset = capability === "lyrics_to_music" ? "vllm-omni-music" : "vllm-omni-speech";
+  const initialProtocol = capability === "lyrics_to_music" ? "vllm_omni_music" : PROTOCOLS[kind][0][0];
   const [connection, setConnection] = useState(existing);
   const [presetId, setPresetId] = useState(
     existing
@@ -94,7 +88,7 @@ export function ModelServiceForm({
         : kind === "image"
           ? "vllm-omni-image"
           : kind === "audio"
-            ? "vllm-omni-speech"
+            ? audioPreset
             : "custom",
   );
   const [modelOptions, setModelOptions] = useState<
@@ -107,10 +101,11 @@ export function ModelServiceForm({
     modelId: existing?.modelId ?? "",
     apiKey: "",
     connectionType: existing?.connectionType ?? "self_hosted",
+    capabilityAutoCheck: existing?.capabilityAutoCheck,
     protocol:
       existing && isSegmentationModel(existing)
         ? "vllm_omni_segmentation"
-        : (existing?.protocol ?? PROTOCOLS[kind][0][0]),
+        : (existing?.protocol ?? initialProtocol),
     authMode: existing?.authMode ?? "none",
     proxyMode: existing ? (existing.proxyMode ?? "system") : "direct",
     videoAdapter: existing?.videoAdapter ?? "auto",
@@ -141,35 +136,36 @@ export function ModelServiceForm({
   const [showKey, setShowKey] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(!existing);
   const locked = busy || discovering || testing;
+  useLayoutEffect(() => {
+    if (!capability) return;
+    onLockChange?.(capability, locked);
+    return () => onLockChange?.(capability, false);
+  }, [capability, locked, onLockChange]);
+  const continuesSetup = capability === "text_response" && Boolean(onSaved);
+  const selectedTestFailed = continuesSetup && selectedModels.some((id) => results[id]?.status === "failed");
   const segmentation = value.protocol === "vllm_omni_segmentation";
   const depth = value.protocol === "vllm_omni_depth";
   const score = value.protocol === "vllm_omni_score";
-  const placeholders =
-    value.protocol === "minimax_video_v2"
-      ? ["https://api.minimax.cn/v2", "MiniMax-H3"]
-      : value.protocol === "kling_video"
-        ? ["https://api-beijing.klingai.com", "kling-4.0"]
-      : value.protocol === "vllm_omni_music"
-        ? MUSIC_PLACEHOLDERS
-        : score
-          ? SCORE_PLACEHOLDERS
-          : depth
-            ? DEPTH_PLACEHOLDERS
-            : PLACEHOLDERS[segmentation ? "vision" : kind];
+  const preset = PROVIDER_PRESETS.find((item) => item.id === presetId);
+  const mediaPresetModels = kind === "agent" ? undefined : preset?.modelsByKind?.[kind];
   const hasSavedKey = Boolean(
     connection &&
     connection.authMode === "bearer" &&
     connection.url === value.url.trim(),
   );
-  const canFetch = Boolean(
-    value.url.trim() &&
-    (value.authMode === "none" || value.apiKey.trim() || hasSavedKey),
-  );
+  const fetchPrerequisite = !value.url.trim()
+    ? "generation.picker.addressRequired"
+    : value.authMode === "bearer" && !value.apiKey.trim() && !hasSavedKey
+      ? "generation.picker.keyRequired"
+      : null;
+  const canFetch = fetchPrerequisite === null;
+  const canSave = canFetch && selectedModels.length > 0 && selectedModels.length <= 200 &&
+    !selectedTestFailed && !selectedModels.some((id) => modelErrors[id]);
   const update = (patch: Partial<ModelConfigInput>) => {
     setValue((current) => ({
       ...current,
       ...patch,
-      ...(["minimax_video_v2", "kling_video"].includes(patch.protocol ?? "")
+      ...(["minimax_video_v2", "kling_video", "bigmodel_video", "higgsfield_open"].includes(patch.protocol ?? "")
         ? ({
             connectionType: "api",
             authMode: "bearer",
@@ -177,18 +173,22 @@ export function ModelServiceForm({
           } as const)
         : {}),
     }));
-    if (
+    const connectionChanged =
       patch.url !== undefined ||
       patch.apiKey !== undefined ||
       patch.protocol !== undefined ||
       patch.connectionType !== undefined ||
-      patch.authMode !== undefined
-    ) {
+      patch.authMode !== undefined;
+    if (connectionChanged || patch.proxyMode !== undefined) {
       setModelIds(selectedModels);
       setLoaded(false);
       setDiscoveryError("");
-      setResults({});
     }
+    if (
+      connectionChanged ||
+      patch.proxyMode !== undefined ||
+      patch.capabilityAutoCheck !== undefined
+    ) setResults({});
     if (patch.protocol !== undefined && patch.protocol !== value.protocol) {
       setModelOptions(
         Object.fromEntries(
@@ -203,20 +203,23 @@ export function ModelServiceForm({
     setError("");
   };
   const loadModels = async () => {
+    if (fetchPrerequisite) {
+      setDiscoveryError(t(fetchPrerequisite));
+      if (fetchPrerequisite === "generation.picker.addressRequired") setConnectionOpen(true);
+      return;
+    }
     setDiscovering(true);
     setDiscoveryError("");
     try {
-      const preset = PROVIDER_PRESETS.find((item) => item.id === presetId);
-      const presetModels = preset?.modelsByKind?.[kind];
-      const models = presetModels
-        ? [...presetModels]
+      const models = mediaPresetModels
+        ? [...mediaPresetModels]
         : (await discoverModels(value, connection?.id)).models;
       setModelIds(models);
-      if (presetModels && !connection) setSelectedModels(models);
+      if (mediaPresetModels && !connection) setSelectedModels(models);
       setLoaded(true);
       setConnectionOpen(false);
     } catch (failure) {
-      setDiscoveryError(errorMessage(failure));
+      setDiscoveryError(t("generation.picker.retry", { error: errorMessage(failure) }));
     } finally {
       setDiscovering(false);
     }
@@ -252,18 +255,13 @@ export function ModelServiceForm({
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (
-      !selectedModels.length ||
-      locked ||
-      selectedModels.some((id) => modelErrors[id])
-    )
-      return;
+    if (locked || !canSave) return;
     setBusy(true);
     setError("");
     try {
       const { inputModalities, videoAdapter, videoCapabilities, ...shared } =
         value;
-      await catalog.saveMany(
+      const saved = await catalog.saveMany(
         shared,
         selectedModels,
         connection?.id,
@@ -271,7 +269,8 @@ export function ModelServiceForm({
           selectedModels.map((id) => [id, optionsFor(id)]),
         ),
       );
-      onClose();
+      if (onSaved) onSaved(saved);
+      else onClose();
     } catch (failure) {
       setError(errorMessage(failure));
     } finally {
@@ -311,6 +310,7 @@ export function ModelServiceForm({
       url: model.url,
       modelId: model.modelId,
       connectionType: model.connectionType,
+      capabilityAutoCheck: model.capabilityAutoCheck,
       inputModalities: model.inputModalities,
       videoAdapter: model.videoAdapter,
       videoCapabilities: model.videoCapabilities,
@@ -328,6 +328,8 @@ export function ModelServiceForm({
     );
     setSelectedModels(peers.map((item) => item.modelId));
     setModelIds(peers.map((item) => item.modelId));
+    setLoaded(false);
+    setDiscoveryError("");
     setModelOptions({});
     setModelErrors({});
     setResults({});
@@ -382,6 +384,7 @@ export function ModelServiceForm({
       <div className="cw-model-editor-scroll">
         <ProviderPicker
           kind={kind}
+          allowProtocol={capability ? (protocol) => firstRunModelKind({ kind, protocol }, capability) : undefined}
           value={presetId}
           disabled={locked}
           onChange={chooseProvider}
@@ -431,13 +434,15 @@ export function ModelServiceForm({
                   required
                   maxLength={2048}
                   value={value.url}
-                  placeholder={placeholders[0]}
+                  placeholder={t("models.service.urlPlaceholder")}
                   aria-describedby={`${connectionFieldId}-url-note`}
                   onChange={(event) => update({ url: event.target.value })}
                 />
               </label>
               <p className="cw-model-note" id={`${connectionFieldId}-url-note`}>
-                {t("models.service.urlNote")}
+                {t(presetId === "bailian-beijing"
+                  ? "models.service.beijingWorkspaceUrl"
+                  : "models.service.urlNote")}
               </p>
             </div>
             <div className="cw-model-connection-field">
@@ -464,6 +469,10 @@ export function ModelServiceForm({
                 {t("models.service.proxyNote")}
               </p>
             </div>
+            <div className="cw-model-connection-field">
+              <label><input type="checkbox" checked={value.capabilityAutoCheck ?? value.connectionType === "self_hosted"}
+                onChange={(event) => update({ capabilityAutoCheck: event.target.checked })} />{t("availability.autoCheck")}</label>
+            </div>
           </fieldset>
         </details>
         <fieldset
@@ -471,7 +480,7 @@ export function ModelServiceForm({
           disabled={locked}
         >
           <div className="cw-model-key-heading">
-            <label htmlFor="service-api-key">API Key</label>
+            <label htmlFor={`${connectionFieldId}-key`}>API Key</label>
             <label className="cw-model-no-auth">
               <input
                 type="checkbox"
@@ -487,7 +496,7 @@ export function ModelServiceForm({
           </div>
           <div className="cw-model-key-input">
             <input
-              id="service-api-key"
+              id={`${connectionFieldId}-key`}
               type={showKey ? "text" : "password"}
               disabled={value.authMode === "none"}
               required={value.authMode === "bearer" && !hasSavedKey}
@@ -500,6 +509,8 @@ export function ModelServiceForm({
                   ? t("models.service.noAuthPlaceholder")
                   : hasSavedKey
                     ? t("models.service.savedKeyPlaceholder")
+                    : value.protocol === "higgsfield_open"
+                      ? "KEY_ID:KEY_SECRET"
                     : t("models.service.apiKeyPlaceholder")
               }
               onChange={(event) => update({ apiKey: event.target.value })}
@@ -516,15 +527,19 @@ export function ModelServiceForm({
             </button>
           </div>
         </fieldset>
-        {["minimax_video_v2", "kling_video"].includes(value.protocol) && (
+        {["minimax_video_v2", "kling_video", "bigmodel_video"].includes(value.protocol) && (
           <p className="cw-model-note">{t("models.service.minimaxNote")}</p>
         )}
+        {value.protocol === "higgsfield_open" && (
+          <p className="cw-model-note">{t("models.service.higgsfieldNote")}</p>
+        )}
         <ModelPicker
-          modelPlaceholder={placeholders[1]}
+          modelPlaceholder={t("models.service.modelPlaceholder")}
           available={modelIds}
           selected={selectedModels}
           loaded={loaded}
           loading={discovering}
+          loadsPreset={Boolean(mediaPresetModels)}
           error={discoveryError}
           disabled={locked}
           canFetch={canFetch}
@@ -535,12 +550,9 @@ export function ModelServiceForm({
           }}
           onTest={kind === "agent" ? (id) => void test(id) : undefined}
           results={results}
-          fetchLabel={
-            PROVIDER_PRESETS.find((item) => item.id === presetId)?.modelsByKind?.[kind]
-              ? t("models.service.loadSupportedModels")
-              : undefined
-          }
           renderDetails={(id) => (
+            <>
+            <DraftAvailabilityCheck connection={{ ...value, ...optionsFor(id) }} configId={connection?.id} modelId={id} />
             <ModelCapabilityCard
               key={`${connection?.id ?? "new"}:${value.protocol}:${id}`}
               modelId={id}
@@ -559,6 +571,7 @@ export function ModelServiceForm({
                 setModelErrors((current) => ({ ...current, [id]: message }))
               }
             />
+            </>
           )}
         />
         {segmentation && (
@@ -574,9 +587,10 @@ export function ModelServiceForm({
         )}
       </div>
       <footer className="cw-model-editor-footer">
-        <div className="cw-model-save-status" role={error ? "alert" : "status"}>
+        <div className="cw-model-save-status" role={error || selectedTestFailed ? "alert" : "status"}>
           {error ||
             selectedModels.map((id) => modelErrors[id]).find(Boolean) ||
+            (selectedTestFailed ? t("firstRun.modelTestFailed") : "") ||
             (selectedModels.length > 200
               ? t("models.service.tooManyModels")
               : selectedModels.length
@@ -586,6 +600,7 @@ export function ModelServiceForm({
                 : t("models.service.selectAtLeastOne"))}
         </div>
         <button
+          ref={cancelButtonRef}
           className="cw-settings-button"
           type="button"
           disabled={locked}
@@ -596,15 +611,9 @@ export function ModelServiceForm({
         <button
           className="cw-settings-button cw-settings-button-primary"
           type="submit"
-          disabled={
-            locked ||
-            !canFetch ||
-            !selectedModels.length ||
-            selectedModels.length > 200 ||
-            selectedModels.some((id) => modelErrors[id])
-          }
+          disabled={locked || !canSave}
         >
-          {busy ? t("models.service.saving") : t("models.service.save")}
+          {t(busy ? "models.service.saving" : continuesSetup ? "models.service.saveAndContinue" : "models.service.save")}
         </button>
       </footer>
     </form>

@@ -13,13 +13,14 @@ import urllib.request
 from opendirector.installation import SOURCE_ROOT, data_root, web_root
 
 ROOT = SOURCE_ROOT
+VIDEO_GATEWAY_FILE = ".opendirector/video-gateway.yaml"  # beside models.json
 
 
-def port_in_use(port: int) -> bool:
+def port_in_use(port: int, host: str = "127.0.0.1") -> bool:
     """True when something already accepts connections on the local port."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+    with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.settimeout(0.25)
-        return probe.connect_ex(("127.0.0.1", port)) == 0
+        return probe.connect_ex((host, port)) == 0
 
 
 def suggested_port(port: int) -> int | None:
@@ -39,7 +40,36 @@ def require_free_port(port: int, flag: str) -> None:
         f"{alternative if alternative else '<端口>'} 指定其他端口。")
 
 
-def start(mode: str = "serve", port: int = 8000, web_port: int = 5173, log_level: str = "info") -> int:
+def video_gateway_config(explicit: Path | None, workspace: Path) -> Path | None:
+    """The video gateway runs only when it is configured: the given file, else the one beside the model settings."""
+    if explicit is not None:
+        return explicit.expanduser().resolve()
+    default = workspace / VIDEO_GATEWAY_FILE
+    return default if default.is_file() else None
+
+
+def video_gateway_listen(config: Path, taken: set[int]) -> tuple[str, int]:
+    """Check the configuration and its port before anything is spawned; returns where to reach the gateway.
+
+    `taken` holds the ports this start is about to bind itself, which are still free when this runs.
+    """
+    from opendirector.video_gateway import ConfigError, load
+    try:
+        settings = load(config)
+    except ConfigError as error:
+        raise RuntimeError(f"Video gateway configuration is invalid / 视频转发层配置无效：{error}") from None
+    # A wildcard address is reached through the matching loopback one.
+    host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(settings["host"], settings["host"])
+    port = settings["port"]
+    if port in taken or port_in_use(port, host):
+        raise RuntimeError(
+            f"Video gateway port {port} is already in use; close the program that holds it or change listen.port in {config}. / "
+            f"视频转发层端口 {port} 已被占用：请关闭占用该端口的程序，或修改 {config} 中的 listen.port。")
+    return host, port
+
+
+def start(mode: str = "serve", port: int = 8000, web_port: int = 5173, log_level: str = "info",
+          video_gateway: Path | None = None) -> int:
     if not 1 <= port <= 65535 or not 1 <= web_port <= 65535:
         raise ValueError("端口必须在 1–65535 之间。")
     if mode not in {"serve", "dev"}:
@@ -61,6 +91,13 @@ def start(mode: str = "serve", port: int = 8000, web_port: int = 5173, log_level
         require_free_port(port, "--port")
         if mode == "dev":
             require_free_port(web_port, "--web-port")
+        gateway_config = video_gateway_config(video_gateway, workspace)
+        gateway = None
+        if gateway_config:
+            gateway_host, gateway_port = video_gateway_listen(gateway_config, {port, web_port} if mode == "dev" else {port})
+            gateway = subprocess.Popen([sys.executable, "-m", "opendirector.video_gateway", str(gateway_config), "--log-level", log_level],
+                                       cwd=workspace, env=environment)
+            processes.append(gateway)
         api = subprocess.Popen([sys.executable, "-m", "opendirector_api.server", "--port", str(port), "--log-level", log_level], cwd=workspace, env=environment)
         processes.append(api)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -77,6 +114,17 @@ def start(mode: str = "serve", port: int = 8000, web_port: int = 5173, log_level
                 time.sleep(0.1)
         else:
             raise RuntimeError("等待本地服务启动超时。")
+        if gateway:
+            for _ in range(300):
+                if gateway.poll() is not None:
+                    raise RuntimeError("The video gateway failed to start; see the error output above. / 视频转发层启动失败，请查看上方错误输出。")
+                if port_in_use(gateway_port, gateway_host):
+                    break
+                time.sleep(0.1)
+            else:
+                raise RuntimeError("Timed out waiting for the video gateway. / 等待视频转发层启动超时。")
+            address = f"[{gateway_host}]" if ":" in gateway_host else gateway_host
+            print(f"Video gateway / 视频转发层: http://{address}:{gateway_port}/v1  ({gateway_config})", flush=True)
         if mode == "dev":
             node = shutil.which("node")
             vite = ROOT / "node_modules/vite/bin/vite.js"

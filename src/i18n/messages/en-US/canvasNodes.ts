@@ -1,5 +1,7 @@
 /** Node frames, cards, versions, stacks and media controls. */
 export const canvasNodes = {
+  "canvasNodes.text.resize": "Resize text node",
+
   "canvasNodes.kind.image": "Image",
   "canvasNodes.kind.video": "Video",
   "canvasNodes.kind.audio": "Audio",
@@ -19,6 +21,9 @@ export const canvasNodes = {
   "canvasNodes.file.local": "Local file",
   "canvasNodes.file.open": "Open preview",
   "canvasNodes.upload.missing": "Media not found. Choose it again.",
+  "canvasNodes.media.loading": "Loading media",
+  "canvasNodes.media.failed": "Could not load media",
+  "canvasNodes.media.retry": "Retry",
   "canvasNodes.upload.aria": "Upload {kind}",
   "canvasNodes.upload.local": "Upload from computer",
 
@@ -206,6 +211,7 @@ export const canvasNodes = {
   "canvasNodes.versionComposer.seconds": "{value} seconds",
   "canvasNodes.versionComposer.mode.reference": "Reference-to-video",
   "canvasNodes.versionComposer.mode.firstFrame": "First-frame-to-video",
+  "canvasNodes.versionComposer.mode.control": "Structure control",
   "canvasNodes.versionComposer.mode.continuation": "Video continuation",
   "canvasNodes.versionComposer.mode.music": "Music generation",
   "canvasNodes.versionComposer.mode.speech": "Text to speech",

@@ -5,15 +5,17 @@ from uuid import UUID
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 
-from opendirector.domain.capabilities import agent_input_modalities
+from opendirector.domain.capabilities import AgentInputModality, agent_input_modalities
 from opendirector.domain.video_capabilities import VideoCapabilities as ExistingVideoCapabilities
 from opendirector.domain.video_capabilities import VideoAdapter, check_video_config
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.rule_facts import SERVICE_VOICE_PATTERN
 from .base import Contract
 
 ModelKind = Literal['agent', 'image', 'video', 'audio', 'vision']
-Protocol = Literal['openai', 'volcengine', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
-VideoMode = Literal['first_frame', 'reference', 'continuation']
+Protocol = Literal['openai', 'volcengine', 'higgsfield_open', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
+VideoMode = Literal['first_frame', 'reference', 'continuation', 'control']
+ImageQuality = Literal['auto', 'low', 'medium', 'high']
 Count = Annotated[int, Field(strict=True, ge=0)]
 
 
@@ -29,9 +31,10 @@ class ImageOutput(Contract):
 
 
 class VoiceLibraryCapabilities(Contract):
-    provider: Literal['vllm_omni', 'moss'] = Field(description='Voice registry protocol.')
+    provider: Literal['vllm_omni', 'moss', 'minimax', 'zhipu'] = Field(description='Voice registry protocol.')
     connectionId: str = Field(min_length=1, max_length=200, description='Opaque service, endpoint and account identity.')
     requiresTranscript: bool = Field(description='Registered voice must have a reference transcript.')
+    acceptsTranscript: bool = Field(default=False, description='Registry stores an optional reference transcript when one is supplied.')
     requiresReferenceAudio: bool = Field(description='Registered voice must have actual reference audio.')
     supportsUploadedVoices: bool = Field(default=True, description='Selected model checkpoint accepts uploaded registry voices.')
     referenceEmbeddingDimension: int | None = Field(default=None, ge=1, le=65536,
@@ -44,6 +47,7 @@ class VoiceLibraryCapabilities(Contract):
 
 
 class InputRules(Contract):
+    fractionalDuration: bool = Field(default=False, exclude_if=lambda value: not value, description="Accept fractional video seconds within each output duration range.")
     profile: str = Field(min_length=1, max_length=100, description='Model capability profile.')
     voiceLibrary: VoiceLibraryCapabilities | None = Field(default=None, exclude_if=lambda value: value is None,
         description='Supported voice registry and adapter requirements; omitted for unsupported models.')
@@ -51,6 +55,8 @@ class InputRules(Contract):
         default=None, exclude_if=lambda value: value is None, description='Maximum characters in the final prompt including text references.')
     voiceRequired: bool | None = Field(default=None, exclude_if=lambda value: value is None,
         description='Whether speech generation requires an explicit service voice ID.')
+    defaultVoice: str | None = Field(default=None, exclude_if=lambda value: value is None,
+        pattern=SERVICE_VOICE_PATTERN, description='Service voice ID applied when a required selection is still empty.')
     referencesAllowed: bool | None = Field(default=None, exclude_if=lambda value: value is None,
         description='Whether references may be attached, including context-only references.')
     allowedKinds: tuple[Literal['text', 'image', 'video', 'audio'], ...] = Field(description='Accepted reference media kinds.')
@@ -59,9 +65,17 @@ class InputRules(Contract):
     maxAudios: Count = Field(description='Maximum reference audio count.')
     imageBytes: Count = Field(description='Maximum bytes per reference image.')
     videoBytes: Count = Field(description='Maximum bytes per reference video.')
+    audioBytes: Count | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Maximum bytes per reference audio; omitted preserves the existing request budget.')
+    referenceMediaMinSeconds: float | None = Field(default=None, ge=0, exclude_if=lambda value: value is None,
+        description='Minimum duration of each reference video or audio clip.')
+    referenceMediaSeconds: float | None = Field(default=None, gt=0, exclude_if=lambda value: value is None,
+        description='Maximum total reference duration, applied separately to video and audio.')
     requestBytes: Count = Field(description='Maximum aggregate reference bytes per request.')
     videoModes: tuple[VideoMode, ...] = Field(description='Supported video generation modes.')
     imageOutputs: tuple[ImageOutput, ...] = Field(default=(), description='Supported image aspect ratios and sizes.')
+    imageQualities: tuple[ImageQuality, ...] | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Supported image rendering qualities; omitted for models without quality control.')
     outputResolutions: tuple[str, ...] = Field(default=(), description='Supported output resolution values.')
     referenceImageResolutions: tuple[str, ...] | None = Field(default=None, description='Supported reference image resolution values.')
     videoCapabilities: VideoCapabilities | None = Field(default=None, description='Supported video generation capabilities.')
@@ -99,7 +113,7 @@ class ModelConnection(Contract):
     protocol: Protocol = Field(description='Provider wire protocol.')
     authMode: Literal['none', 'bearer'] = Field(description='Authentication mode for the provider connection.')
     proxyMode: Literal['system', 'direct'] = Field(default='system', description='Use the system proxy or connect directly to the model service.')
-    inputModalities: tuple[Literal['text', 'image'], ...] | None = Field(default=None, description='Supported model input media kinds.')
+    inputModalities: tuple[AgentInputModality, ...] | None = Field(default=None, description='Supported model input media kinds.')
     videoAdapter: VideoAdapter = Field(default='auto', description='Provider-specific video adapter.')
     videoCapabilities: VideoCapabilities | None = Field(default=None, description='Supported video generation capabilities.')
 
@@ -128,7 +142,7 @@ class ModelConnection(Contract):
     @model_validator(mode='after')
     def connection(self):
         allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
-                   'video': {'kling_video', 'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
+                   'video': {'higgsfield_open', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
                    'audio': {'openai', 'volcengine', 'vllm_omni_music', 'vllm_omni_score'}, 'vision': {'vllm_omni'}}
         if self.protocol not in allowed[self.kind]:
             raise ValueError('Protocol is incompatible with model category')
@@ -141,16 +155,84 @@ class ModelConnection(Contract):
         return self
 
 
+class CapabilityDeclaration(Contract):
+    status: Literal['available', 'unavailable', 'unknown'] = Field(description='Support decision excluding execution state.')
+    reasonCode: str = Field(description='Localizable declaration decision.')
+    checkedAt: int | None = Field(description='Completion time in Unix milliseconds.')
+    expiresAt: int | None = Field(description='Declaration expiry in Unix milliseconds.')
+
+
+class CapabilityExecution(Contract):
+    state: Literal['unpaused', 'paused', 'unknown'] = Field(description='Observed execution pause state.')
+    scope: Literal['deployment', 'worker'] | None = Field(description='Scope proved by the service observation.')
+    checkedAt: int | None = Field(description='Observation receipt time in Unix milliseconds.')
+    expiresAt: int | None = Field(description='Execution observation expiry in Unix milliseconds.')
+
+
+class CapabilityInputDetail(Contract):
+    name: str = Field(description='Canonical input role or parameter name.')
+    support: Literal['supported', 'unsupported', 'unknown'] = Field(description='Explicit fact, with omission kept unknown.')
+    source: Literal['service', 'application'] = Field(default='service', description='Owner of this restriction.')
+    minCount: int | None = Field(default=None, description='Minimum transmitted inputs of this role.')
+    maxCount: int | None = Field(default=None, description='Maximum transmitted inputs of this role.')
+    values: tuple[str | int | float | bool, ...] | None = Field(default=None, description='Explicit allowed parameter values.')
+    min: float | None = Field(default=None, description='Inclusive parameter lower bound.')
+    max: float | None = Field(default=None, description='Inclusive parameter upper bound.')
+    multipleOf: float | None = Field(default=None, description='Parameter step from zero.')
+
+
+class OperationAvailability(Contract):
+    operation: str = Field(description='Canonical remote operation identifier.')
+    profile: str = Field(description='Input and output mode used by the configured adapter.')
+    method: str = Field(description='Actual HTTP method used for submission.')
+    path: str = Field(description='Actual HTTP submission path.')
+    output: str = Field(description='Output modality consumed by the adapter.')
+    status: Literal['available', 'unavailable', 'unknown'] = Field(description='Current evidence for this exact request.')
+    reasonCode: str = Field(description='Stable, localizable decision reason.')
+    checkedAt: int | None = Field(description='Observation completion time in Unix milliseconds.')
+    expiresAt: int | None = Field(description='Decision expiry in Unix milliseconds; recompute after expiry.')
+    declaration: CapabilityDeclaration | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Request support independently expires from the short execution observation.')
+    execution: CapabilityExecution | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Short-lived execution observation, separate from declared support.')
+    inputDetails: tuple[CapabilityInputDetail, ...] = Field(default=(),
+        description='Known role and parameter facts for the actual request route; no saved configuration changes.')
+
+
+class ModelAvailability(Contract):
+    configId: UUID | None = Field(description='Saved model identity; null for an unsaved draft.')
+    modelId: str = Field(description='Exact remote model identifier requested.')
+    identity: str = Field(description='Opaque identity of the checked connection and model.')
+    autoCheck: bool = Field(description='Effective service automatic-check preference.')
+    status: Literal['available', 'unavailable', 'unknown'] = Field(description='Summary across the configured adapter operations.')
+    reasonCode: str = Field(description='Stable, localizable summary reason.')
+    checkedAt: int | None = Field(description='Observation completion time in Unix milliseconds.')
+    expiresAt: int | None = Field(description='Earliest operation expiry in Unix milliseconds.')
+    revision: str = Field(description='Projection version; changes on observations, identity changes and expiration.')
+    operations: tuple[OperationAvailability, ...] = Field(description='Exact operations consumed by the configured adapter.')
+
+
+class AvailabilityCatalog(Contract):
+    revision: str = Field(description='Version of the complete observation projection.')
+    models: tuple[ModelAvailability, ...] = Field(description='Current saved model observations; reading does not query providers.')
+
+
 class ModelConfigPublic(ModelConnection):
     """Application-level, never embedded in an editable project's credential data."""
     id: UUID = Field(description='Stable object ID.')
     providerId: UUID | None = Field(default=None, exclude=True, description='Shared provider connection ID.')
     inputRules: InputRules = Field(description='Verified model input limits and output choices.')
+    capabilityAutoCheck: bool | None = Field(default=None, strict=True, exclude_if=lambda value: value is None,
+        description='Service preference; omitted defaults to automatic for self-hosted connections.')
+    availability: ModelAvailability | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Ephemeral observation, never persisted in project snapshots.')
 
 
 class ModelConfigWrite(ModelConnection):
     """Only the model-settings write boundary accepts a credential."""
     apiKey: SecretStr | None = Field(default=None, max_length=8192, description='Provider credential; omitted from public model records.')
+    capabilityAutoCheck: bool | None = Field(default=None, strict=True, exclude_if=lambda value: value is None,
+        description='Service automatic-check override; omission preserves the existing preference.')
 
     @field_validator('apiKey')
     @classmethod
@@ -168,7 +250,7 @@ class ModelSnapshot(Contract):
     protocol: Protocol = Field(description='Provider wire protocol.')
     connectionType: Literal['api', 'self_hosted'] = Field(description='Hosted or local model connection type.')
     proxyMode: Literal['system', 'direct'] = Field(default='system', exclude_if=lambda value: value == 'system', description='Network routing selected when the job was accepted.')
-    inputModalities: tuple[Literal['text', 'image'], ...] | None = Field(default=None, exclude_if=lambda value: value is None, description='Supported model input media kinds.')
+    inputModalities: tuple[AgentInputModality, ...] | None = Field(default=None, exclude_if=lambda value: value is None, description='Supported model input media kinds.')
     videoAdapter: VideoAdapter = Field(default='auto', description='Provider-specific video adapter.')
     inputRules: InputRules | None = Field(default=None, description='Verified model input limits and output choices.')
 

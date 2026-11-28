@@ -11,6 +11,7 @@ export const RULE_FACTS = {
   "timelineTextTotalLength": 200000,
   "timelineFontBytes": 33554432,
   "timelineFontTotalBytes": 67108864,
+  "timelineDurationEpsilon": 0.0005,
   "maxReferences": 64,
   "textReferenceBytes": 65536,
   "agentImageBytes": 33554432,
@@ -25,6 +26,10 @@ export const RULE_FACTS = {
   "musicSecondsInitial": 30,
   "referenceMediaSeconds": 15,
   "fasth3MediaReferenceLimit": 12,
+  "controlVideoSeconds": [
+    4,
+    30
+  ],
   "serviceVoicePattern": "^[A-Za-z0-9_.-]{1,64}$",
   "storedVoicePattern": "^[\\w.-]{1,64}$",
   "videoAspectRatios": [
@@ -61,13 +66,14 @@ export function aspectRatioChoices(input: {
     ];
   }
   if (input.kind === "video" && input.publishedRatios != null) {
-    if (input.videoMode === "first-last") return ["auto"];
+    if (input.videoMode === "control" || input.videoMode === "first-last" && input.protocol !== "higgsfield_open") return ["auto"];
     return ["auto", ...input.publishedRatios];
   }
   const framed = input.protocol === "volcengine" || input.dimensioned;
   if (
     input.kind === "video" &&
     input.videoMode !== "continuation" &&
+    input.videoMode !== "control" &&
     framed
   ) {
     return ["auto", ...RULE_FACTS.videoAspectRatios];
@@ -75,7 +81,14 @@ export function aspectRatioChoices(input: {
   return ["auto"];
 }
 
+export function durationMatches(seconds: number, durations: readonly number[], fractional = false): boolean {
+  return fractional
+    ? durations.length > 0 && seconds >= Math.min(...durations) && seconds <= Math.max(...durations)
+    : durations.includes(seconds);
+}
+
 export function resolutionChoices(input: {
+  readonly fractionalDuration?: boolean;
   readonly kind: string;
   readonly videoMode?: string | null;
   readonly aspectRatio?: string | null;
@@ -119,7 +132,7 @@ export function resolutionChoices(input: {
       ? choices.filter((label) =>
           outputs.some(
             (item) =>
-              item.resolution === label && item.durations.includes(duration),
+              item.resolution === label && durationMatches(duration, item.durations, input.fractionalDuration),
           ),
         )
       : choices;
@@ -131,8 +144,8 @@ export function effectiveVideoMode(input: {
   readonly allowedModes: readonly string[];
   readonly hasNonTextMedia: boolean;
   readonly configured: boolean;
-}): "continuation" | "first_frame" | "reference" {
-  if (input.mode === "continuation") return "continuation";
+}): "continuation" | "control" | "first_frame" | "reference" {
+  if (input.mode === "continuation" || input.mode === "control") return input.mode;
   if (input.mode === "first-last" || input.mode === "first_frame") {
     return "first_frame";
   }
@@ -154,6 +167,7 @@ export function referenceByteLimit(input: {
   readonly kind: string;
   readonly imageBytes?: number | null;
   readonly videoBytes?: number | null;
+  readonly audioBytes?: number | null;
 }): number {
   if (input.kind === "text") return RULE_FACTS.textReferenceBytes;
   if (input.kind === "image") {
@@ -162,10 +176,74 @@ export function referenceByteLimit(input: {
   if (input.kind === "video") {
     return input.videoBytes ?? RULE_FACTS.defaultVideoBytes;
   }
+  if (input.kind === "audio" && input.audioBytes != null) return input.audioBytes;
   return RULE_FACTS.defaultVideoBytes;
 }
 
+export function promptOptionalWithMedia(input: {
+  readonly profile?: string;
+  readonly hasMedia: boolean;
+}): boolean {
+  return input.profile === "higgsfield-magi-2" && input.hasMedia;
+}
+
 export const RULE_DERIVATION_VECTORS = [
+  {
+    "name": "magi2-image-ratios",
+    "fn": "aspectRatioChoices",
+    "input": {
+      "kind": "video",
+      "videoMode": "first-last",
+      "publishedRatios": [
+        "16:9",
+        "9:16"
+      ],
+      "protocol": "higgsfield_open",
+      "dimensioned": false,
+      "imageOutputRatios": []
+    },
+    "expected": [
+      "auto",
+      "16:9",
+      "9:16"
+    ]
+  },
+  {
+    "name": "magi2-audio-bytes",
+    "fn": "referenceByteLimit",
+    "input": {
+      "kind": "audio",
+      "audioBytes": 15728640
+    },
+    "expected": 15728640
+  },
+  {
+    "name": "magi2-media-prompt-optional",
+    "fn": "promptOptionalWithMedia",
+    "input": {
+      "profile": "higgsfield-magi-2",
+      "hasMedia": true
+    },
+    "expected": true
+  },
+  {
+    "name": "magi2-text-prompt-required",
+    "fn": "promptOptionalWithMedia",
+    "input": {
+      "profile": "higgsfield-magi-2",
+      "hasMedia": false
+    },
+    "expected": false
+  },
+  {
+    "name": "other-model-prompt-required",
+    "fn": "promptOptionalWithMedia",
+    "input": {
+      "profile": "minimax-h3-official",
+      "hasMedia": true
+    },
+    "expected": false
+  },
   {
     "name": "image-ratios-drop-auto-and-duplicates",
     "fn": "aspectRatioChoices",
@@ -636,6 +714,20 @@ export const RULE_DERIVATION_VECTORS = [
       "configured": true
     },
     "expected": "continuation"
+  },
+  {
+    "name": "control-mode",
+    "fn": "effectiveVideoMode",
+    "input": {
+      "mode": "control",
+      "allowedModes": [
+        "reference",
+        "control"
+      ],
+      "hasNonTextMedia": true,
+      "configured": true
+    },
+    "expected": "control"
   },
   {
     "name": "first-last-mode",

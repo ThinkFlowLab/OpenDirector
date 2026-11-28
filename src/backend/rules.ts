@@ -1,12 +1,16 @@
+import { availabilityBlocker, availabilityInputLimit } from "./availability.ts";
 import { voiceIssue, type VoiceCapabilities } from "./voices.ts";
 import { nodeByteSize } from "../canvas/uploadPolicy.ts";
 import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
+import type { InputRules as CreationInputRules } from "../contracts/generated.ts";
 import {
   RULE_FACTS,
+  durationMatches,
   aspectRatioChoices,
   effectiveVideoMode,
   generateAudioOptions,
   referenceByteLimit,
+  promptOptionalWithMedia,
   resolutionChoices,
 } from "../contracts/ruleFacts.generated.ts";
 import { subjectReferenceNodes } from "../canvas/subjectReferences.ts";
@@ -15,11 +19,12 @@ import { frameImageLimitIssue } from "../canvas/frameReferences.ts";
 import { nodeDownstreamKinds } from "../canvas/connectionPolicy.ts";
 import { tNow } from "../i18n/messages.ts";
 import type { MessageKey } from "../i18n/types.ts";
+import type { ModelAvailability } from "../contracts/generated.ts";
 
 /** Model configurations and input rules published by the local API. */
 export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
-export type BackendVideoMode = "first_frame" | "reference" | "continuation";
-export type VideoAdapter = "auto" | "fasth3" | "minimax_h3" | "standard";
+export type BackendVideoMode = "first_frame" | "reference" | "continuation" | "control";
+export type VideoAdapter = "auto" | "fasth3" | "fasth3_dual" | "minimax_h3" | "standard";
 export interface VideoCapabilities {
   outputs: {
     resolution: string;
@@ -33,14 +38,19 @@ export interface VideoCapabilities {
 }
 
 export interface InputRules {
+  fractionalDuration?: boolean;
   profile: string;
   allowedKinds: string[];
   maxImages: number;
   imageBytes?: number;
   videoBytes?: number;
+  audioBytes?: number | null;
+  referenceMediaMinSeconds?: number | null;
+  referenceMediaSeconds?: number | null;
   requestBytes?: number;
   maxPromptCharacters?: number | null;
   voiceRequired?: boolean | null;
+  defaultVoice?: string | null;
   voiceLibrary?: VoiceCapabilities | null;
   referencesAllowed?: boolean | null;
   maxVideos: number;
@@ -51,12 +61,15 @@ export interface InputRules {
   audioReferenceStandalone?: boolean | null;
   generateAudioOptions?: boolean[] | null;
   imageOutputs?: { aspectRatio: string; size: string }[];
+  imageQualities?: CreationInputRules["imageQualities"];
   outputResolutions?: string[];
   referenceImageResolutions?: string[];
   videoCapabilities?: VideoCapabilities | null;
 }
 
 export interface ModelConfig {
+  capabilityAutoCheck?: boolean | null;
+  availability?: ModelAvailability | null;
   providerId?: string | null;
   id: string;
   kind: ModelKind;
@@ -66,8 +79,10 @@ export interface ModelConfig {
   protocol:
     | "openai"
     | "volcengine"
+    | "higgsfield_open"
     | "minimax_video_v2"
     | "kling_video"
+    | "bigmodel_video"
     | "vllm_omni"
     | "vllm_omni_segmentation"
     | "vllm_omni_music"
@@ -77,14 +92,14 @@ export interface ModelConfig {
   authMode: "none" | "bearer" | null;
   proxyMode?: "system" | "direct";
   inputRules: InputRules;
-  inputModalities?: ("text" | "image")[] | null;
+  inputModalities?: ("text" | "image" | "video" | "audio")[] | null;
   videoAdapter?: VideoAdapter;
   videoCapabilities?: VideoCapabilities | null;
 }
 
 export interface BackendReference {
   node: CanvasNode;
-  role: "reference" | "firstFrame" | "lastFrame" | "continuation";
+  role: "reference" | "firstFrame" | "lastFrame" | "continuation" | "control";
 }
 
 /** SAM configurations serve editing tools, including legacy vision entries. */
@@ -209,6 +224,10 @@ export function backendReferenceIssue(
 ): string | null {
   const kind = node.data.kind;
   const rules = config.inputRules;
+  const unusedInReading =
+    settings.mode === "audio" && !isMusicModel(config)
+      ? tNow("generation.issue.audioModeReference")
+      : null;
   if (
     settings.mode === "video" &&
     settings.videoMode === "first-last" &&
@@ -235,11 +254,13 @@ export function backendReferenceIssue(
   if (kind === "text")
     return rules.allowedKinds.includes("text")
       ? node.data.text?.trim()
-        ? null
+        ? (unusedInReading ?? null)
         : tNow("errors.rules.textEmpty")
       : tNow("errors.rules.textReference");
   const continuation =
     settings.mode === "video" && settings.videoMode === "continuation";
+  if (kind === "audio" && settings.mode === "video" && settings.videoMode === "control")
+    return tNow("errors.rules.controlAudio");
   if (kind === "video" && !continuation && !rules.maxVideos)
     return rules.videoModes.includes("continuation")
       ? tNow("errors.rules.videoContinuation")
@@ -248,6 +269,7 @@ export function backendReferenceIssue(
     return tNow("errors.rules.kindReference", {
       kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"),
     });
+  if (unusedInReading) return unusedInReading;
   return node.data.src && node.data.assetState !== "missing"
     ? null
     : tNow("errors.rules.mediaMissing");
@@ -267,7 +289,7 @@ export function backendReferences(
             (resource) =>
               !(
                 resource.type === "video" &&
-                settings.videoMode === "continuation"
+                (settings.videoMode === "continuation" || settings.videoMode === "control")
               ) && !backendReferenceIssue(resource, settings, config),
           )
         : [node],
@@ -298,7 +320,9 @@ export function backendReferences(
     role:
       settings.videoMode === "continuation" && node.data.kind === "video"
         ? "continuation"
-        : "reference",
+        : settings.videoMode === "control" && node.data.kind === "video"
+          ? "control"
+          : "reference",
   }));
 }
 
@@ -316,10 +340,13 @@ export function canvasReferenceRole(
     role?: string | null;
     source: { id?: string } | { assetId: string };
   },
-): "reference" | "first_frame" | "last_frame" | "continuation" {
+): "reference" | "first_frame" | "last_frame" | "continuation" | "control" {
   const sourceId = "id" in ref.source ? ref.source.id : undefined;
   if (settings?.videoMode === "continuation" && sourceKind === "video") {
     return "continuation";
+  }
+  if (settings?.videoMode === "control" && sourceKind === "video") {
+    return "control";
   }
   if (
     settings?.videoMode === "first-last" &&
@@ -367,6 +394,7 @@ export function backendResolutions(
 ): string[] {
   const rules = config?.inputRules;
   return resolutionChoices({
+    fractionalDuration: rules?.fractionalDuration,
     kind: settings.mode,
     videoMode: settings.videoMode,
     aspectRatio: settings.aspectRatio,
@@ -435,9 +463,9 @@ export function serviceGenerationSettings(
     )
       next.resolution = "auto";
   }
-  next = serviceAudioSettings(next, config);
+  next = serviceImageSettings(serviceAudioSettings(next, config), config);
   if (modelChanged) {
-    next.imagePreset = "none";
+    if (next.imagePreset === "product-views") next.imagePreset = "none";
     if (next.voiceSelection) {
       if (voiceIssue(next.voiceSelection, config.inputRules.voiceLibrary)) {
         next.voiceName = undefined;
@@ -456,6 +484,10 @@ export function serviceGenerationSettings(
       !next.voiceName
     )
       next.voiceName = "2890a3a4-0012-4997-a545-8b045fe83bbe";
+    // A published default keeps a required selection non-empty; the library
+    // still owns which voices exist.
+    if (next.mode === "audio" && !next.voiceName && config.inputRules.defaultVoice)
+      next.voiceName = config.inputRules.defaultVoice;
     if (
       !generateAudioOptions({
         published: config.inputRules.generateAudioOptions ?? null,
@@ -465,6 +497,20 @@ export function serviceGenerationSettings(
       next.audioEnabled = true;
   }
   return next;
+}
+
+/** Drop a quality selection when the resolved service no longer supports it. */
+export function serviceImageSettings(
+  settings: GenerationSettings,
+  config: ModelConfig,
+): GenerationSettings {
+  if (
+    settings.mode !== "image" ||
+    settings.imageQuality === undefined ||
+    config.inputRules.imageQualities?.includes(settings.imageQuality)
+  )
+    return settings;
+  return { ...settings, imageQuality: undefined };
 }
 
 /** Normalize a deliberate model/time change before persisting it to the canvas. */
@@ -477,11 +523,11 @@ export function serviceVideoSettings(
   const next = { ...settings };
   const caps = config.inputRules.videoCapabilities;
   const durations = backendDurations(config);
-  if (durations.length && !durations.includes(next.durationSeconds))
+  if (durations.length && !durationMatches(next.durationSeconds, durations, config.inputRules.fractionalDuration))
     next.durationSeconds = caps!.defaultDuration;
   if (
-    next.videoMode === "continuation" &&
-    !config.inputRules.videoModes.includes("continuation")
+    (next.videoMode === "continuation" || next.videoMode === "control") &&
+    !config.inputRules.videoModes.includes(next.videoMode)
   )
     next.videoMode = "reference";
   const resolutions = backendResolutions(next, config, incoming);
@@ -498,10 +544,29 @@ export function serviceVideoSettings(
   return next;
 }
 
+/**
+ * A connected text reference implicitly supplies an image or video prompt;
+ * the backend appends its body to the provider prompt. Speech and music never
+ * read text references.
+ */
+export function hasImplicitTextPrompt(
+  settings: GenerationSettings,
+  sources: readonly CanvasNode[],
+  config: ModelConfig,
+) {
+  return (
+    (settings.mode === "image" || settings.mode === "video") &&
+    backendReferences(settings, sources, config).some(
+      (item) => item.node.data.kind === "text",
+    )
+  );
+}
+
 export function backendBlocker(
   settings: GenerationSettings,
   incoming: readonly CanvasNode[],
   models: readonly ModelConfig[],
+  pinned: readonly CanvasNode[] = [],
 ): string | null {
   const frameLimit = frameImageLimitIssue(settings, incoming);
   if (frameLimit) return frameLimit;
@@ -515,14 +580,30 @@ export function backendBlocker(
     return tNow("errors.rules.transcriptionModel");
   if (!isGenerationModel(config))
     return tNow("errors.rules.segmentationModel");
-  if (!settings.prompt.trim())
+  const references = backendReferences(settings, [...incoming, ...pinned], config);
+  const imageCount = references.filter((ref) => ref.node.data.kind === "image").length;
+  const profile = settings.mode === "audio" ? (isMusicModel(config) ? "lyrics_to_music" : "text_to_speech")
+    : settings.mode === "image" ? (imageCount > 1 ? "images_to_image" : imageCount === 1 ? "image_to_image" : "text_to_image")
+    : references.some((ref) => ref.role === "continuation") ? "video_continuation"
+    : references.some((ref) => ref.node.data.kind === "video") ? "video_to_video"
+    : references.some((ref) => ref.node.data.kind === "image") ? "image_to_video" : "text_to_video";
+  const capabilityIssue = availabilityBlocker(config, profile);
+  if (capabilityIssue) return capabilityIssue;
+  if (
+    !settings.prompt.trim() &&
+    !hasImplicitTextPrompt(settings, [...incoming, ...pinned], config) &&
+    !promptOptionalWithMedia({
+      profile: config.inputRules.profile,
+      hasMedia: references.some((ref) => ["image", "video", "audio"].includes(ref.node.data.kind)),
+    })
+  )
     return settings.mode !== "audio"
       ? tNow("errors.rules.promptRequired")
       : isMusicModel(config)
         ? tNow("errors.rules.musicStyle")
         : tNow("errors.rules.speechText");
   const rules = config.inputRules;
-  if (rules.referencesAllowed === false && incoming.length)
+  if (rules.referencesAllowed === false && (incoming.length || pinned.length))
     return tNow("errors.rules.referencesUnsupported");
   if (settings.mode === "audio" && !isMusicModel(config)) {
     const issue = voiceIssue(settings.voiceSelection, rules.voiceLibrary);
@@ -535,7 +616,7 @@ export function backendBlocker(
   }
   if (rules.voiceRequired && !serviceVoice(settings))
     return tNow(rules.voiceLibrary ? "voiceLibrary.selectRequired" : "errors.rules.voiceRequired");
-  if (rules.profile === "moss-image" && incoming.some((node) => node.data.kind === "text")) {
+  if (rules.profile === "moss-image" && [...incoming, ...pinned].some((node) => node.data.kind === "text")) {
     let layout: unknown;
     try {
       layout = JSON.parse(settings.prompt);
@@ -551,7 +632,7 @@ export function backendBlocker(
       limit: rules.maxPromptCharacters,
     });
   if (settings.mode === "image") {
-    if (settings.imagePreset && settings.imagePreset !== "none")
+    if (settings.imagePreset === "product-views")
       return tNow("errors.rules.productViews");
     if (
       !backendAspectRatios(settings, config).includes(settings.aspectRatio) ||
@@ -576,11 +657,11 @@ export function backendBlocker(
       return tNow("errors.rules.lyricsLimit");
     if (
       !config.inputRules.allowedKinds.includes("audio") &&
-      incoming.some((node) => node.data.kind === "audio")
+      [...incoming, ...pinned].some((node) => node.data.kind === "audio")
     )
       return tNow("errors.rules.referenceMusic");
     if (
-      hasMusicReference(settings, incoming, config) &&
+      hasMusicReference(settings, [...incoming, ...pinned], config) &&
       !models.some(isScoreModel)
     )
       return tNow("errors.rules.transcriptionRequired");
@@ -606,10 +687,13 @@ export function backendBlocker(
     }).includes(false)
   )
     return tNow("errors.rules.audioDisable");
-  const references = backendReferences(settings, incoming, config);
   if (settings.mode === "video") {
     const durations = backendDurations(config);
-    if (durations.length && !durations.includes(settings.durationSeconds))
+    if (
+      settings.videoMode !== "control" &&
+      durations.length &&
+      !durationMatches(settings.durationSeconds, durations, rules.fractionalDuration)
+    )
       return tNow("errors.rules.duration");
     if (
       rules.outputResolutions &&
@@ -641,11 +725,27 @@ export function backendBlocker(
       references.filter((item) => item.role === "continuation").length !== 1
     )
       return tNow("errors.rules.continuationSource");
+    if (settings.videoMode === "control") {
+      const control = references.filter((item) => item.role === "control");
+      if (control.length !== 1) return tNow("errors.rules.controlSource");
+      const seconds = control[0]!.node.data.media?.durationSeconds;
+      const [low, high] = RULE_FACTS.controlVideoSeconds;
+      if (seconds !== undefined && (seconds < low || seconds > high + 0.05))
+        return tNow("errors.rules.controlDuration", { low, high });
+    }
   }
   const count = (kind: string) =>
     references.filter(
-      (item) => item.role !== "continuation" && item.node.data.kind === kind,
+      (item) => item.role !== "continuation" && item.role !== "control" && item.node.data.kind === kind,
     ).length;
+  for (const kind of ["image", "video", "audio"] as const) {
+    const limit = availabilityInputLimit(config, profile, kind);
+    const current = count(kind);
+    if (limit !== null && current > limit)
+      return tNow(kind === "image" ? "errors.capability.imageCount" : "errors.rules.serviceInputLimit", {
+        kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"), limit, current,
+      });
+  }
   for (const [kind, limit] of [
     ["image", rules.maxImages],
     ["video", rules.maxVideos],
@@ -683,12 +783,24 @@ export function referenceBudgetIssue(
       kind: source.type,
       imageBytes: config.inputRules.imageBytes,
       videoBytes: config.inputRules.videoBytes,
+      audioBytes: config.inputRules.audioBytes,
     });
     if (size > limit) return tNow("errors.rules.referenceFileSize");
     total += size;
   }
   if (total > (config.inputRules.requestBytes ?? Infinity))
     return tNow("errors.rules.referenceBudget");
+  const maximumSeconds = config.inputRules.referenceMediaSeconds;
+  if (maximumSeconds != null) {
+    const minimumSeconds = config.inputRules.referenceMediaMinSeconds ?? 0;
+    for (const kind of ["video", "audio"] as const) {
+      const seconds = usable.filter((source) => source.type === kind)
+        .map((source) => source.data.media?.durationSeconds);
+      if (seconds.some((value) => value == null || value < minimumSeconds) ||
+          seconds.reduce<number>((sum, value) => sum + (value ?? 0), 0) > maximumSeconds)
+        return tNow("errors.rules.referenceDuration", { minimum: minimumSeconds, maximum: maximumSeconds });
+    }
+  }
   for (const [kind, maximum] of [
     ["image", config.inputRules.maxImages],
     ["video", config.inputRules.maxVideos],

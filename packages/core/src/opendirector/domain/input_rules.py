@@ -2,10 +2,15 @@
 from urllib.parse import urlsplit
 from typing import Literal
 from opendirector.domain.rule_facts import AGENT_IMAGE_BYTES, DEFAULT_VIDEO_BYTES, MAX_REFERENCES
-from opendirector.domain.video_capabilities import capability_fields, seedance_20_variant
+from opendirector.domain.video_capabilities import capability_fields, seedance_20_variant, seedance_25_variant
 from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
 from .moss_speech import is_moss_speech
+from .minimax_speech import MINIMAX_SPEECH_MODELS, MINIMAX_SPEECH_TEXT_CHARACTERS, is_minimax_speech
+from .projects import ProjectError
+from .higgsfield import AUDIO_BYTES, IMAGE_BYTES, VIDEO_BYTES, PROFILE, RATIOS, validate_model
 from .kling_models import KLING_MODELS, KLING_RATIOS, kling_capabilities
+from .bigmodel_image import is_bigmodel_image
+from .zhipu_speech import ZHIPU_DEFAULT_VOICE, ZHIPU_SPEECH_CHARACTERS, is_zhipu_speech
 
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 
@@ -18,6 +23,30 @@ def _adapter_rules(config):
              'maxAudios': 0, 'imageBytes': 8 * 1024 * 1024, 'requestBytes': 48 * 1024 * 1024,
              'videoModes': ['first_frame'] if kind == 'video' else []}
     rules.update(maxVideos=0, videoBytes=DEFAULT_VIDEO_BYTES)
+    if config.get('protocol') == 'higgsfield_open':
+        validate_model(config)
+        rules.update(profile=PROFILE, allowedKinds=['text', 'image', 'video', 'audio'],
+                     maxImages=10, maxVideos=5, maxAudios=5, imageBytes=IMAGE_BYTES,
+                     videoBytes=VIDEO_BYTES, audioBytes=AUDIO_BYTES,
+                     requestBytes=10 * IMAGE_BYTES + 5 * VIDEO_BYTES + 5 * AUDIO_BYTES + MAX_REFERENCES * 64 * 1024,
+                     referenceMediaMinSeconds=2, referenceMediaSeconds=30, maxPromptCharacters=15000,
+                     videoModes=['first_frame', 'reference'], frameRoles=['first_frame', 'last_frame'],
+                     audioReferenceStandalone=True, aspectRatios=list(RATIOS))
+        return rules
+    if is_bigmodel_image(config):
+        rules.update(profile='bigmodel-glm-image', allowedKinds=['text'], maxImages=0)
+        return rules
+    if (kind == 'image' and config.get('protocol') == 'openai'
+            and url.scheme == 'https' and host == 'api.minimax.cn' and url.port in {None, 443}
+            and path == '/v1' and model in {'MiniMax-H3-Image', 'MiniMax-H3-Image-Highspeed'}):
+        rules.update(profile='minimax-h3-image', maxImages=16,
+                     imageBytes=64 * 1024 * 1024, requestBytes=64 * 1024 * 1024)
+        return rules
+    if (kind == 'image' and config.get('protocol') == 'openai'
+            and config.get('connectionType') == 'self_hosted'
+            and model.rsplit('/', 1)[-1].lower() == 'minimax-h3-image'):
+        rules.update(profile='vllm-omni-minimax-h3-image')
+        return rules
     if is_moss_image(config):
         rules.update(profile='moss-image', allowedKinds=['text'], maxImages=0,
                      maxPromptCharacters=MOSS_IMAGE_PROMPT_CHARACTERS)
@@ -25,6 +54,17 @@ def _adapter_rules(config):
     if is_moss_speech(config):
         rules.update(profile='moss-speech', allowedKinds=[], maxImages=0,
                      voiceRequired=True, referencesAllowed=False)
+        return rules
+    if is_minimax_speech(config):
+        if config['modelId'] not in MINIMAX_SPEECH_MODELS:
+            raise ProjectError('不支持该 MiniMax 语音型号，请选择预设中的型号。', 422, code='minimax_speech_model')
+        rules.update(profile='minimax-speech', allowedKinds=[], maxImages=0, voiceRequired=True,
+                     referencesAllowed=False, maxPromptCharacters=MINIMAX_SPEECH_TEXT_CHARACTERS)
+        return rules
+    if is_zhipu_speech(config):
+        rules.update(profile='zhipu-speech', allowedKinds=[], maxImages=0, voiceRequired=True,
+                     referencesAllowed=False, maxPromptCharacters=ZHIPU_SPEECH_CHARACTERS,
+              defaultVoice=ZHIPU_DEFAULT_VOICE)
         return rules
     if kind == 'vision' or config.get('protocol') == 'vllm_omni_segmentation':
         # Shared image segmentation / video tracking service, never a generator.
@@ -38,6 +78,13 @@ def _adapter_rules(config):
         # SheetSage2 transcription service: it turns a reference recording into
         # a score for music generation and never generates audio itself.
         rules.update(profile='vllm-omni-score', allowedKinds=[], maxImages=0)
+        return rules
+    if kind == 'video' and config.get('protocol') == 'bigmodel_video':
+        from .bigmodel_video import cogvideo_capabilities
+        cogvideo_capabilities(model)
+        rules.update(profile='bigmodel-cogvideox-3', allowedKinds=['text', 'image'], maxImages=2,
+                     imageBytes=5 * 1024 * 1024, requestBytes=16 * 1024 * 1024, maxPromptCharacters=512,
+                     videoModes=['first_frame'], frameRoles=['first_frame', 'last_frame'], aspectRatios=[])
         return rules
     if kind == 'video' and config.get('protocol') == 'kling_video':
         kling_capabilities(model)
@@ -67,10 +114,12 @@ def _adapter_rules(config):
                      imageBytes=30 * 1024 * 1024, requestBytes=64 * 1024 * 1024, videoModes=['first_frame', 'reference', 'continuation'],
                      outputResolutions=['480P', '768P'])
         return rules
-    if kind == 'video' and config.get('protocol') == 'vllm_omni' and adapter == 'fasth3':
+    if kind == 'video' and config.get('protocol') == 'vllm_omni' and adapter in {'fasth3', 'fasth3_dual'}:
         rules.update(profile='fasth3-omni', allowedKinds=['text', 'image', 'video', 'audio'],
                      maxImages=9, maxVideos=3, maxAudios=3, imageBytes=30 * 1024 * 1024,
-                     requestBytes=160 * 1024 * 1024, videoModes=['reference'], outputResolutions=['480P', '768P'])
+                     requestBytes=160 * 1024 * 1024, videoModes=['reference', 'control'], outputResolutions=['480P', '768P'])
+        if adapter == 'fasth3_dual':
+            rules.update(videoModes=['reference', 'first_frame', 'control'], frameRoles=['first_frame', 'last_frame'])
         return rules
     if kind == 'video' and config.get('protocol') == 'vllm_omni':
         rules.update(profile='standard-video', maxImages=1, videoModes=['first_frame'])
@@ -81,8 +130,21 @@ def _adapter_rules(config):
             rules['profile'] = 'deepseek-flash'
     elif host == 'ark.cn-beijing.volces.com' and path == '/api/plan/v3':
         seedance = seedance_20_variant(model) if kind == 'video' else None
-        if kind == 'image' and model in {'doubao-seedream-5.0-pro', 'doubao-seedream-5-0-pro'}:
+        seedance25 = seedance_25_variant(model) if kind == 'video' else None
+        if kind == 'image' and model in {'doubao-seedream-5.5', 'doubao-seedream-5.0-pro', 'doubao-seedream-5-0-pro',
+                                         'doubao-seedream-5.0-flash', 'doubao-seedream-5-5'}:
+            # The 5.x family shares one contract: up to ten reference images and
+            # 1K / 1.5K / 2K output tiers.
             rules.update(profile='seedream-5.0-pro', maxImages=10, imageBytes=30 * 1024 * 1024, requestBytes=64 * 1024 * 1024)
+        elif seedance25:
+            # 2.5 reaches 30 s and takes many more references than 2.0: the full
+            # model 30 images + 10 videos + 10 audios, flash 10 + 5 + 5.
+            flash = seedance25 == 'flash'
+            rules.update(profile='seedance-2.5', allowedKinds=['text', 'image', 'video', 'audio'],
+                         maxImages=10 if flash else 30, maxVideos=5 if flash else 10, maxAudios=5 if flash else 10,
+                         imageBytes=30 * 1024 * 1024, videoBytes=200 * 1024 * 1024,
+                         requestBytes=64 * 1024 * 1024, videoModes=['first_frame', 'reference'],
+                         frameRoles=['first_frame', 'last_frame'])
         elif seedance:
             # The 2.0 family shares one adapter: mini and fast serve 480P/720P,
             # the full model adds 1080P and 4K. All accept 4–15 seconds.
@@ -104,15 +166,15 @@ def _adapter_rules(config):
         rules.update(profile='vllm-omni-qwen-image', allowedKinds=['text', 'image'], maxImages=4,
                      imageBytes=30 * 1024 * 1024, requestBytes=64 * 1024 * 1024)
     if kind == 'image' and model.rsplit('/', 1)[-1].lower() == 'z-image-turbo':
-        # Self-hosted vLLM-Omni text-to-image: it draws from the prompt alone, so
-        # documents are inlined as text and reference images are not accepted.
-        rules.update(profile='vllm-omni-image', allowedKinds=['text'], maxImages=0)
+        # The Omni edits endpoint accepts one source image and strength.
+        rules.update(profile='vllm-omni-image', allowedKinds=['text', 'image'], maxImages=1)
     if kind == 'image' and config.get('protocol') in {None, 'openai'} and name.startswith(('gpt-image', 'chatgpt-image')):
         # OpenAI gpt-image (and the chatgpt-image-* aliases on the same Images API):
         # documented text-to-image plus reference editing with at
         # most 16 images, each under 25 MB and under 50 MB for the whole request.
         rules.update(profile='openai-gpt-image', allowedKinds=['text', 'image'], maxImages=16,
-                     imageBytes=25 * 1024 * 1024, requestBytes=50 * 1024 * 1024)
+                     imageBytes=25 * 1024 * 1024, requestBytes=50 * 1024 * 1024,
+                     imageQualities=['auto', 'low', 'medium', 'high'])
     if kind == 'audio':
         # vLLM-Omni music models (MiniMax Music 3, YuE2) share /audio/speech with
         # TTS but read a style caption and lyrics, so the protocol names the role.
@@ -132,7 +194,7 @@ def input_rules(config):
         if library is not None:
             rules['voiceLibrary'] = library
     if config['kind'] == 'video':
-        rules['generateAudioOptions'] = [True, False] if config.get('protocol') == 'volcengine' else [True]
+        rules['generateAudioOptions'] = [True, False] if config.get('protocol') in {'volcengine', 'bigmodel_video', 'higgsfield_open'} else [True]
     if config['kind'] == 'image' and rules['profile'] != 'vllm-omni-segmentation':
         from .image_output import image_outputs
         rules['imageOutputs'] = image_outputs(config, rules['profile'])

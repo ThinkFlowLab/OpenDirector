@@ -5,7 +5,14 @@ import { defaultTranslate } from "./assistantTranslate.ts";
 
 export type ContentPart =
   | { type: "text"; text: string }
-  | { type: "skill"; name: string }
+  | {
+      type: "skill";
+      name: string;
+      /** Set for an image preset atom; the id published by the tool catalog. */
+      preset?: string;
+      /** The preset's alternate framing. */
+      faceEmphasis?: boolean;
+    }
   | {
       type: "reference";
       assetId: string;
@@ -75,7 +82,13 @@ export function normalizeContent(parts: ReferenceContent): ReferenceContent {
       const last = result.at(-1);
       if (last?.type === "text") last.text += text;
       else result.push({ type: "text", text });
-    } else if (part.type === "skill") result.push({type: "skill", name: part.name});
+    } else if (part.type === "skill")
+      result.push({
+        type: "skill",
+        name: part.name,
+        ...(part.preset ? { preset: part.preset } : {}),
+        ...(part.preset && part.faceEmphasis ? { faceEmphasis: true } : {}),
+      });
     else
       result.push({
         type: "reference",
@@ -97,6 +110,16 @@ export function normalizeContent(parts: ReferenceContent): ReferenceContent {
 export function blankContent(content: ReferenceContent) {
   return content.every(
     (part) => part.type === "text" && !part.text.replace(/[\s\u200b]/g, ""),
+  );
+}
+
+/** Whether the prompt holds nothing but its preset chip. */
+export function presetOnlyContent(content: ReferenceContent) {
+  return content.every(
+    (part) =>
+      part.type === "text"
+        ? !part.text.replace(/[\s\u200b]/g, "")
+        : part.type === "skill" && Boolean(part.preset),
   );
 }
 export function referenceIds(content: ReferenceContent) {

@@ -8,10 +8,81 @@ import {
 import { withMediaDuration } from "./editorMedia.ts";
 import { tNow } from "../i18n/messages.ts";
 import type { VideoCrop } from "./videoCrop.ts";
+import { fetchMediaSource } from "../backend/creationClient.ts";
+import { prepareSoftwareAac } from "./softwareAac.ts";
 
 export interface VideoTimeRange {
   start: number;
   end: number;
+}
+
+export type VideoTrimFormat = "webm" | "mp4";
+
+export async function renderTrimmedMp4(
+  src: string,
+  range: VideoTimeRange,
+  signal: AbortSignal,
+  onPosition: (seconds: number) => void,
+): Promise<Blob> {
+  const {
+    ALL_FORMATS,
+    BlobSource,
+    BufferTarget,
+    Conversion,
+    Input,
+    Mp4OutputFormat,
+    Output,
+  } = await import("mediabunny");
+  signal.throwIfAborted();
+  const response = await fetchMediaSource(src, { signal });
+  if (!response.ok) throw new Error(tNow("errors.videoAction.mp4TrimFailed"));
+  const source = await response.blob();
+  signal.throwIfAborted();
+  const input = new Input({ source: new BlobSource(source), formats: ALL_FORMATS });
+  try {
+    const audio = await input.getPrimaryAudioTrack();
+    if (audio) await prepareSoftwareAac();
+    signal.throwIfAborted();
+    const target = new BufferTarget();
+    const conversion = await Conversion.init({
+      input,
+      output: new Output({
+        format: new Mp4OutputFormat({ fastStart: "in-memory" }),
+        target,
+      }),
+      tracks: "primary",
+      trim: range,
+      video: { codec: "avc" },
+      audio: { codec: "aac" },
+      showWarnings: false,
+    });
+    signal.throwIfAborted();
+    if (
+      !conversion.isValid ||
+      !conversion.utilizedTracks.some((track) => track.isVideoTrack()) ||
+      (audio && !conversion.utilizedTracks.includes(audio))
+    )
+      throw new Error(tNow("errors.videoAction.mp4TrimFailed"));
+    conversion.onProgress = (fraction) => {
+      onPosition(range.start + fraction * (range.end - range.start));
+    };
+    const cancel = () => void conversion.cancel().catch(() => {});
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      await conversion.execute();
+      signal.throwIfAborted();
+    } finally {
+      signal.removeEventListener("abort", cancel);
+    }
+    if (!target.buffer?.byteLength)
+      throw new Error(tNow("errors.videoAction.mp4TrimFailed"));
+    return new Blob([target.buffer], { type: "video/mp4" });
+  } catch {
+    signal.throwIfAborted();
+    throw new Error(tNow("errors.videoAction.mp4TrimFailed"));
+  } finally {
+    input.dispose();
+  }
 }
 
 export function fitVideoTimeRange(
@@ -35,6 +106,8 @@ export function initialVideoActionParameters(
   tool: CanvasToolId,
 ): ToolParameters {
   switch (tool) {
+    case "video-trim":
+      return { outputFormat: "webm" };
     case "video-upscale":
       return { resolution: "4K" };
     case "video-depth-capture":
@@ -43,6 +116,8 @@ export function initialVideoActionParameters(
       return { fps: 30 };
     case "video-matting":
       return { background: "black" };
+    case "video-mask-composite":
+      return { stretch: true };
     case "audio-separation":
       return { mode: "voice", description: "" };
     case "video-subtitle-erasure":
@@ -70,7 +145,7 @@ export function videoActionInputError(
     "video-frame-interpolation": { key: "fps", values: [30, 60] },
     "video-matting": {
       key: "background",
-      values: ["black", "green", "transparent"],
+      values: ["black", "green", "transparent", "mask"],
     },
     "audio-separation": {
       key: "mode",
@@ -161,7 +236,7 @@ export async function captureVideoEndpoint(
   const { Input, BlobSource, ALL_FORMATS, EncodedPacketSink, CanvasSink } =
     await import("mediabunny");
   signal.throwIfAborted();
-  const response = await fetch(src, { signal });
+  const response = await fetchMediaSource(src, { signal });
   if (!response.ok) throw new Error(tNow("errors.videoAction.videoRead"));
   const blob = await response.blob();
   signal.throwIfAborted();
@@ -231,7 +306,7 @@ export async function extractVideoAudio(
   signal: AbortSignal,
 ): Promise<LinkedMediaResult> {
   signal.throwIfAborted();
-  const response = await fetch(src, { signal });
+  const response = await fetchMediaSource(src, { signal });
   if (!response.ok) throw new Error(tNow("errors.videoAction.audioRead"));
   const source = await response.arrayBuffer();
   signal.throwIfAborted();
@@ -274,16 +349,19 @@ export async function exportVideoRange(
   range: VideoTimeRange,
   signal: AbortSignal,
   onPosition: (seconds: number) => void,
-  crop?: VideoCrop,
+  options: { crop?: VideoCrop; mp4Source?: string } = {},
 ): Promise<LinkedMediaResult> {
-  const blob = await recordLocalVideoRange(
-    video,
-    range.start,
-    range.end,
-    signal,
-    onPosition,
-    { crop },
-  );
+  const { crop, mp4Source } = options;
+  const blob = mp4Source
+    ? await renderTrimmedMp4(mp4Source, range, signal, onPosition)
+    : await recordLocalVideoRange(
+        video,
+        range.start,
+        range.end,
+        signal,
+        onPosition,
+        { crop },
+      );
   const mimeType = blob.type;
   const src = await mediaBlobDataUrl(blob, signal);
   const measured = await withMediaDuration(

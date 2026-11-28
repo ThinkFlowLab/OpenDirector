@@ -5,8 +5,9 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, TypeAdapter, create_model, model_validator
 
 from .assets import AssetRef, MediaMetadata
-from .base import Contract, Digest, GenerationKind, MediaKind, ObjectVersion, Point, Positive, Revision, digest, unique
-from .canvas import CanvasItem
+from .base import CanvasColor, Contract, Digest, GenerationKind, MediaKind, ObjectVersion, Point, Positive, Revision, digest, unique
+from .segment_run import SegmentRunPlan
+from .canvas import GroupAssembly, CanvasItem
 from .editors import EditorDocument
 from opendirector.domain.rule_facts import PROMPT_MAX_LENGTH
 from .generation import GenerationSpec, Job, PromptPart, Reference
@@ -16,8 +17,12 @@ class ProjectCreate(Contract):
     name: str = Field(min_length=1, max_length=100, pattern=r'\S', description='User-visible name.')
 
 
-class ProjectRename(ProjectCreate):
-    pass
+    defaultNameIndex: Positive | None = Field(default=None, exclude_if=lambda value: value is None,
+                                          description="Index for an automatically named initial project.")
+
+
+class ProjectRename(Contract):
+    name: str = Field(min_length=1, max_length=100, pattern=r'\S', description='User-visible name.')
 
 
 class AssetImport(Contract):
@@ -58,6 +63,38 @@ class AssetDelete(Contract):
     def assets(self):
         unique(self.assetIds, 'delete asset IDs')
         return self
+
+
+class GroupPlanDraft(Contract):
+    model_config = ConfigDict(json_schema_extra={'examples': [{
+        'groupId': '00000000-0000-0000-0000-000000000001',
+        'plan': {
+            'source': {
+                'assetId': '00000000-0000-0000-0000-000000000002',
+                'kind': 'video', 'revision': 1, 'fingerprint': 'sha256:' + '0' * 64,
+            },
+            'fps': 24, 'frameCount': 24,
+            'entries': [{
+                'kind': 'generated', 'sourceStart': 0, 'sourceEnd': 24,
+                'itemId': '00000000-0000-0000-0000-000000000003',
+                'shot': 'opening', 'step': {'kind': 'anchor'},
+            }],
+        },
+        'assembly': {
+            'timelineItemId': '00000000-0000-0000-0000-000000000004',
+            'outputItemId': '00000000-0000-0000-0000-000000000005',
+            'clips': [{
+                'itemId': '00000000-0000-0000-0000-000000000003',
+                'inFrame': 0, 'outFrame': 24,
+            }],
+        },
+    }]})
+
+    groupId: UUID = Field(description='Canvas group holding the draft.')
+    plan: SegmentRunPlan = Field(description='Segment intervals in source order.')
+    assembly: GroupAssembly = Field(description='Retained frames for the generated intervals.')
+    planLocale: Literal['zh-CN', 'en-US'] = Field(default='zh-CN', description='Language of the published plan.')
+    planNotes: str = Field(default='', max_length=16000, description='Notes accompanying the plan.')
 
 
 class CanvasShow(Contract):
@@ -105,8 +142,12 @@ class CanvasPresentationUpdate(Contract):
     height: Positive | None = Field(default=None, description='Height in pixels.')
     zIndex: int | None = Field(default=None, strict=True, description='Canvas stacking order.')
     locked: bool | None = Field(default=None, description='Whether edits to this object are blocked.')
+    # Omitted when unset so commands recorded before this field keep their fingerprint.
+    color: CanvasColor | None = Field(default=None, exclude_if=lambda value: value is None, description="Group background color in #RRGGBB format, or '' for the default.")
     parentId: UUID | None = Field(default=None, description='Parent canvas group ID, or null for the root.')
     # Presence of parentId distinguishes retaining a group from ungrouping.
+    autoLayout: Literal['run', 'free'] | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Enable Run layout for a top-level group, or use free to return it to manual layout.')
 
 
 class CanvasHide(Contract):
@@ -131,6 +172,7 @@ class TimelinePublishRender(Contract):
     editorId: UUID = Field(description='Editable document ID.')
     asset: AssetRef = Field(description='Immutable asset version.')
     outputId: UUID = Field(description='Published canvas output ID.')
+    expectedOutputRevision: Revision | None = Field(default=None, exclude_if=lambda value: value is None, description='Current output node revision when appending a rendered version.')
     title: str = Field(default='合成视频', max_length=255, description='User-visible title.')
     position: Point = Field(default_factory=Point, description='Position in the owning canvas or stage.')
 
@@ -269,6 +311,8 @@ class CommandBase(Contract):
             raise ValueError('expectedVersions missing current versions for ' + ', '.join(missing))
         if self.type == 'generation.submit' and versions[('generation_spec', payload.specId)] != payload.expectedSpecRevision:
             raise ValueError('Submission version differs from expected spec version')
+        if self.type == 'timeline.publishRender' and payload.expectedOutputRevision is not None and versions[('canvas_item', payload.outputId)] != payload.expectedOutputRevision:
+            raise ValueError('Output revision differs from its expected version')
         if self.type in {'generationSpec.update', 'editor.save', 'reference.update', 'reference.restore'}:
             obj = (payload.spec if self.type == 'generationSpec.update' else
                    payload.document if self.type == 'editor.save' else payload.reference)
@@ -282,12 +326,16 @@ class CommandBase(Contract):
         required = []
         if self.type in {'project.rename', 'project.trash', 'project.restore'}:
             required = [('project', self.projectId)]
+        elif self.type in {'group.saveRunPlan', 'group.publishRun'}:
+            required = [('canvas_item', payload.groupId)]
         elif self.type == 'canvas.publishMedia':
             required = [('canvas_item', payload.itemId), *[('asset', o.asset.assetId) for o in payload.outputs]]
             if payload.sourceEditorId:
                 required.append(('editor_document', payload.sourceEditorId))
         elif self.type in {'canvas.applyEdit', 'timeline.publishRender'}:
             required = [('canvas_item', payload.itemId), ('asset', payload.asset.assetId), ('editor_document', payload.editorId)]
+            if self.type == 'timeline.publishRender' and payload.expectedOutputRevision is not None:
+                required.append(('canvas_item', payload.outputId))
         elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit', 'canvas.configure', 'canvas.attachEditor', 'canvas.detachEditor', 'canvas.applyVersion'}:
             required = [('canvas_item', payload.itemId)]
         elif self.type == 'canvas.move':
@@ -325,9 +373,12 @@ _COMMANDS = (
     ('AssetMetadataCommand', 'asset.updateMetadata', AssetMetadataUpdate, 'Rename an asset.'),
     ('AssetDeleteCommand', 'asset.delete', AssetDelete, 'Delete assets after an impact preview.'),
     ('CanvasCreateGenerationCommand', 'canvas.createGeneration', CanvasCreateGeneration, 'Create a visible generation node and references atomically, preserving canvas source connections, including pinned ones.'),
+    ('GroupSavePlanCommand', 'group.saveRunPlan', GroupPlanDraft, 'Save a draft segment plan.'),
+    ('GroupPublishRunCommand', 'group.publishRun', GroupPlanDraft, 'Publish the segment plan as a Markdown canvas node.'),
     ('CanvasShowCommand', 'canvas.show', CanvasShow, 'Create or restore a canvas display item.'),
     ('CanvasMoveCommand', 'canvas.move', CanvasMove, 'Move one or more canvas items.'),
     ('CanvasUpdateCommand', 'canvas.update', CanvasPresentationUpdate, 'Update canvas presentation, grouping or lock state.'),
+    ('CanvasLayoutRunsCommand', 'canvas.layoutRuns', EmptyPayload, 'Arrange the current canvas Run groups and their children without moving locked groups.'),
     ('CanvasHideCommand', 'canvas.hide', CanvasHide, 'Remove a canvas item; preserves project contents. Remove all visible items to clear the canvas.'),
     ('CanvasMaterializeCommand', 'canvas.materialize', CanvasMaterialize, 'Bind an asset to an empty or material canvas item.'),
     ('CanvasApplyEditCommand', 'canvas.applyEdit', CanvasApplyEdit, 'Apply an editor result to a canvas item.'),
@@ -362,7 +413,7 @@ for _name, _type, _payload, _description in _COMMANDS:
     COMMAND_MODELS[_type] = _model
     globals()[_name] = _model
 
-_BATCH_TYPES = {'canvas.show', 'canvas.move', 'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit',
+_BATCH_TYPES = {'canvas.show', 'canvas.move', 'canvas.update', 'canvas.layoutRuns', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit',
                 'canvas.configure', 'canvas.attachEditor', 'canvas.detachEditor', 'generationSpec.create', 'generationSpec.update',
                 'reference.add', 'reference.update', 'reference.restore', 'reference.remove', 'editor.create', 'editor.save', 'result.select', 'generationSpec.setPrompt'}
 _OPERATIONS = tuple(create_model(name + 'Operation', __base__=Contract,
@@ -396,16 +447,27 @@ def command_fingerprint(command: Command) -> str:
 
 from opendirector.domain.timeline_errors import TimelineIssueCode
 
-IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'missing_object', 'reference_invalid',
+IssueCode = Literal[TimelineIssueCode, 'invalid_input', 'revision_conflict', 'role_restricted', 'canvas_run_layout_group', 'canvas_run_layout_conflict', 'canvas_run_layout_extent', 'canvas_run_layout_shared_object', 'missing_object', 'reference_invalid', 'image_quality_unsupported',
+                    'bigmodel_video_model', 'bigmodel_video_output', 'bigmodel_video_image',
+                    'bigmodel_video_frames', 'bigmodel_video_prompt', 'bigmodel_video_cancel',
                     'kling_model', 'kling_mode', 'kling_image', 'kling_frames', 'kling_prompt', 'kling_aspect', 'kling_output', 'kling_cancel',
+                    'higgsfield_model', 'higgsfield_key', 'higgsfield_output', 'higgsfield_parameters', 'higgsfield_mode',
+                    'higgsfield_image', 'higgsfield_format', 'higgsfield_media_size', 'higgsfield_duration',
+                    'higgsfield_reference_count', 'higgsfield_reference_changed', 'higgsfield_frames', 'higgsfield_references', 'higgsfield_prompt',
+                    'capability_unavailable', 'capability_paused', 'capability_connection_changed',
                     'capability_unsupported', 'preview_expired', 'storage_unavailable', 'submission_unknown', 'provider_error',
                     'moss_speech_text', 'moss_speech_voice', 'moss_speech_reference', 'moss_prompt_limit',
                     'moss_image_size', 'moss_image_reference', 'moss_layout_reference',
+                    'bigmodel_image_size', 'bigmodel_image_reference', 'bigmodel_image_prompt',
+                    'minimax_image_reference', 'minimax_image_count', 'minimax_image_bytes',
+                    'minimax_speech_text', 'minimax_speech_voice', 'minimax_speech_reference', 'minimax_speech_model',
+                    'zhipu_speech_text', 'zhipu_speech_voice', 'zhipu_speech_reference',
                     'voice_library_unsupported', 'voice_connection_changed', 'voice_reference_required',
                     'voice_transcript_required', 'voice_transcript_too_long', 'voice_description_too_long',
                     'voice_not_found', 'voice_delete_unsupported',
                     'voice_consent_required', 'voice_name_invalid', 'voice_audio_invalid', 'voice_format',
-                    'voice_size', 'voice_duration', 'voice_provider_protocol', 'voice_provider_error', 'voice_provider_timeout', 'voice_model_unsupported']
+                    'voice_size', 'voice_duration', 'voice_provider_protocol', 'voice_provider_error', 'voice_provider_timeout', 'voice_model_unsupported',
+                    'voice_name_taken', 'voice_provider_quota']
 
 
 class ContractIssue(Contract):
@@ -413,6 +475,8 @@ class ContractIssue(Contract):
     message: str = Field(min_length=1, max_length=500, description='Human-readable issue description.')
     objectId: UUID | None = Field(default=None, description='Target business object ID.')
     field: str | None = Field(default=None, max_length=200, description='Path of the field responsible for this issue.')
+    relatedObjectId: UUID | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Other business object involved in the issue.')
 
 
 class CommandReceipt(Contract):
@@ -477,13 +541,20 @@ class CanvasStatusQuery(QueryBase):
     waitSeconds: float = Field(default=0, ge=0, le=30, description='Wait for generation changes; zero returns immediately.')
 
 
+class JobStatusQuery(QueryBase):
+    type: Literal['job.status'] = Field(description='Read several generation jobs, optionally waiting for terminal states.')
+    objectIds: tuple[UUID, ...] = Field(default=(), max_length=50, description='Generation job IDs; every unfinished project job when empty.')
+    waitSeconds: float = Field(default=0, ge=0, le=300, description='Wait for terminal states; zero returns immediately.')
+    until: Literal['all', 'any'] = Field(default='all', description='Return after every selected job or any job reaches a terminal state.')
+
+
 class AssetPreviewQuery(QueryBase):
     type: Literal['asset.preview'] = Field(description='Preview an asset; does not establish model observation.')
     objectId: UUID = Field(description='Asset ID.')
 
 
 Query = Annotated[ProjectQuery | ObjectQuery | VersionsQuery | AssetSearchQuery | AssetUsageQuery |
-                  CanvasStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
+                  CanvasStatusQuery | JobStatusQuery | AssetPreviewQuery, Field(discriminator='type')]
 
 
 class ChangedObject(Contract):

@@ -103,7 +103,10 @@ button[aria-expanded="true"] [data-dropdown-chevron] {
     display: none;
   }
 
-  :root .cw-settings-dialog :is(.cw-settings-field, .cw-model-connection) select {
+  :root
+    :is(.cw-settings-dialog, .cw-model-editor)
+    :is(.cw-settings-field, .cw-model-connection)
+    select {
     background-image: none;
     padding-inline-end: 10px;
   }
@@ -474,6 +477,7 @@ button[aria-expanded="true"] [data-dropdown-chevron] {
   --chat-surface: #f0f5ff;
   --chat-border: #d5e2f5;
   --chat-text: #263750;
+  --chat-muted: #5d6b80;
 }
 :root[data-theme="light"]
   :is(

@@ -17,7 +17,7 @@ _REASONS = {
     'authentication': ('生成服务鉴权失败。', '请在设置中检查 API Key。'),
     'permission': ('生成服务拒绝了访问请求。', '请检查 API Key 是否正确及有效、模型调用权限和服务安全策略。'),
     'quota': ('模型账户余额或套餐额度不足。', '请核对账户余额和套餐额度。'),
-    'rate_limit': ('模型调用频率或配额受限。', '请核对调用频率及套餐额度后再操作。'),
+    'rate_limit': ('模型服务繁忙或请求受限。', '请稍后再试；若持续发生，请检查服务状态、调用频率和账户额度。'),
     'temporary': ('生成服务暂时不可用。', '请先核对已有任务，再处理当前步骤。'),
     'provider': ('生成服务未能完成当前操作。', '请核对原任务；错误码和请求标识可用于向供应商排查。'),
 }
@@ -80,6 +80,10 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         category = 'input'
     elif code == '55000000':
         category = 'temporary'
+    diagnostic_text = error.get('message', '')
+    if code == '1113' and isinstance(diagnostic_text, str) and ('余额' in diagnostic_text or '资源包' in diagnostic_text):
+        # Zhipu BigModel reports an empty balance as HTTP 429; retrying cannot help.
+        category = 'quota'
     message, suggestion = _REASONS[category]
     if provider == 'kling':
         kling_categories = {'1000': 'authentication', '1001': 'authentication', '1002': 'authentication',
@@ -92,6 +96,11 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         if code in {'1300', '1301'}:
             message, suggestion = ('供应商判定提示词或参考图片违反内容政策，已拒绝生成。',
                                    '请调整提示词或参考素材后再生成；当前输入和已有结果保留。')
+    if provider == 'minimax':
+        # MiniMax open-platform base_resp.status_code values, delivered with HTTP 200.
+        category = {'1001': 'temporary', '1002': 'rate_limit', '1039': 'rate_limit', '1004': 'authentication',
+                    '2049': 'authentication', '1008': 'quota', '1042': 'input', '2013': 'input'}.get(code, category)
+        message, suggestion = _REASONS[category]
     diagnostic = error.get('message', '')
     diagnostic = diagnostic[:8192].lower() if isinstance(diagnostic, str) else ''
     if http_status in {400, 422} and category == 'input':
@@ -101,7 +110,8 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
         elif re.search(r'(?:not support|unsupported|not supported)', diagnostic) and re.search(r'(?:reference_(?:image|video|audio)|image_url|video_url|audio_url|input_audio)', diagnostic):
             category, message = 'reference', '供应商拒绝了参考类型或输入组合。'
             suggestion = '请核对参考类型和生成模式，或选择其他已适配模型；当前输入和已有结果保留。'
-    if name == 'voice_not_found':
+    if (name == 'voice_not_found' or provider == 'minimax' and code == '2054'
+            or code == '1214' and diagnostic.startswith('音色不存在')):
         category, message = 'input', '所选音色不存在或不可用。'
         suggestion = '请检查音色 ID 是否属于当前账户可用的音色。'
     elif name == 'inputimagesensitivecontentdetected.privacyinformation':
@@ -173,10 +183,10 @@ def transport_failure(stage, *, timeout=False, status=None):
         status=status or (504 if timeout else 503))
 
 
-def protocol_failure(stage, *, message='生成服务返回了无法识别或不完整的结果。'):
+def protocol_failure(stage, *, message='生成服务返回了无法识别或不完整的结果。', suggestion=None):
     context = MODEL_JOB_CONTEXT.get()
     logger.error(f'model.error {json.dumps({"project_id": context[0] if context else None, "job_id": context[1] if context else None, "stage": stage, "error_type": "ProtocolError"})}')
     unknown = stage == 'submit'
     return GenerationError(GenerationFailure(category='submission_unknown' if unknown else 'protocol', stage=stage,
         message=message,
-        suggestion='请先核对请求是否已被接收，避免重复生成。' if unknown else '请核对原任务状态和接口协议。'))
+        suggestion=suggestion or ('请先核对请求是否已被接收，避免重复生成。' if unknown else '请核对原任务状态和接口协议。')))

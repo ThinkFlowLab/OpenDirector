@@ -1,16 +1,25 @@
 """Provider doubles exercise the real durable runtime, files and restart path."""
 import asyncio
+from io import BytesIO
+from threading import Event
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+from PIL import Image
 
-from opendirector.application.creation_canvas import resolved_inputs
-from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.creation_assets import CreationAssets
+from opendirector.application.creation_canvas import asset_ref, resolved_inputs
+from opendirector.application.creation_generation import CHECKPOINT_ATTEMPTS, CreationGeneration
 from opendirector.domain.creation.commands import parse_command
+from opendirector.domain.creation.generation import PromptText
+from opendirector.domain.image_presets import FOUR_VIEW_FACE_EMPHASIS, FOUR_VIEW_FACE_TEXT, FOUR_VIEW_TEXT, PRESETS
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.model_configs import ModelConfigs
 from test_creation_canvas_service import project, media, send, text_material, ver
+
+
+pytestmark = pytest.mark.cpu
 
 
 @pytest.fixture
@@ -68,6 +77,158 @@ def request_cancel(store, pid, job):
         changed = current.model_copy(update={'cancelRequested': True, 'revision': current.revision + 1})
         return before.model_copy(update={'jobs': tuple(changed if j.id == changed.id else j for j in before.jobs)})
     return store.commit(command, mark, source='background')
+
+
+@pytest.mark.anyio
+async def test_cancel_wins_over_an_in_flight_running_checkpoint(project, monkeypatch):
+    store, pid, session = project
+    provider = Provider()
+    runner, config = runtime(project, provider)
+    target, spec = configure(project, config)
+    started = asyncio.Event()
+    release = Event()
+    loop = asyncio.get_running_loop()
+    commit = store.commit
+    cancel = runner.cancel
+    conflicts = []
+
+    def hold_running_checkpoint(command, *args, **kwargs):
+        if command.type == 'job.checkpoint' and command.payload.job.status == 'running':
+            loop.call_soon_threadsafe(started.set)
+            assert release.wait(10)
+            receipt = commit(command, *args, **kwargs)
+            conflicts.extend(issue.code for issue in receipt.issues)
+            return receipt
+        return commit(command, *args, **kwargs)
+
+    async def release_after_cancelling(project_id, job_id, edit_session):
+        # cancel() sends the worker's cancellation before it yields.
+        loop.call_soon(release.set)
+        await cancel(project_id, job_id, edit_session)
+
+    monkeypatch.setattr(store, 'commit', hold_running_checkpoint)
+    monkeypatch.setattr(runner, 'cancel', release_after_cancelling)
+    try:
+        submit = parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
+            expectedVersions=[ver('canvas_item', target), ver('generation_spec', spec)],
+            payload=dict(specId=spec.id, expectedSpecRevision=spec.revision, originItemId=target.id)))
+        assert (await runner.execute(submit, session=session)).status == 'accepted'
+        await asyncio.wait_for(started.wait(), 5)
+        job = store.snapshot(pid).jobs[0]
+        command = parse_command(dict(commandId=uuid4(), projectId=pid, type='job.cancel',
+            expectedVersions=[ver('job', job)], payload=dict(jobId=job.id)))
+        assert (await runner.execute(command, session=session)).status == 'applied'
+        final = store.snapshot(pid).jobs[0]
+        assert conflicts == ['revision_conflict']
+        assert final.id == job.id and final.cancelRequested
+        assert final.status == 'cancelled'
+        assert not final.resumeAllowed
+        assert not provider.calls
+    finally:
+        release.set()
+        await runner.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('preset_key, with_reference, face_emphasis, user_prompt, steps', [
+    pytest.param('four-view', False, False, '蓝色外套和短发', (FOUR_VIEW_TEXT,), id='four-view-text'),
+    pytest.param('four-view', False, True, '', (FOUR_VIEW_FACE_TEXT,), id='four-view-text-face-emphasis'),
+    pytest.param('four-view', True, False, '', PRESETS['four-view'].prompts, id='four-view-reference'),
+    pytest.param('four-view', 'duplicate', False, '', PRESETS['four-view'].prompts, id='four-view-duplicate-image'),
+    pytest.param('four-view', True, True, '', (FOUR_VIEW_FACE_EMPHASIS,), id='four-view-reference-face-emphasis'),
+    *(
+        pytest.param(key, with_image, False, '' if with_image else '暖色调，主体偏左。',
+                     preset.prompts if with_image else preset.text_prompts,
+                     id=f'{key}-{"reference" if with_image else "text"}')
+        for key, preset in PRESETS.items() if key != 'four-view'
+        for with_image in (False, True)
+    ),
+])
+async def test_image_preset_freezes_the_instructions_for_the_available_inputs(
+    project, preset_key, with_reference, face_emphasis, user_prompt, steps,
+):
+    store, pid, session = project
+    expected = steps[0] if len(steps) == 1 else '\n'.join([
+        '按以下顺序逐张生成：', *(f'{index}. {step}' for index, step in enumerate(steps, 1)),
+    ])
+
+    class ImageProvider(Provider):
+        async def generate(self, config, task, submitted):
+            self.calls.append(task)
+            image = BytesIO()
+            Image.new('RGB', (32, 32), 'blue').save(image, 'PNG')
+            return 'png', image.getvalue()
+
+    provider = ImageProvider()
+    configs = ModelConfigs(store.local.repository)
+    config = configs.save('image', 'http://127.0.0.1:12345/v1', 'fixture-image', '',
+        connection_type='self_hosted', protocol='openai', auth_mode='none', capability_auto_check=False)
+    runner = CreationGeneration(store, configs, provider)
+    try:
+        target, spec = media(project, kind='image')
+        content = (PromptText(type='text', text=user_prompt),) if user_prompt else ()
+        changed = spec.model_copy(update={'modelConfigId': UUID(config['id']), 'prompt': user_prompt,
+            'promptContent': content,
+            'parameters': spec.parameters.model_copy(update={'preset': preset_key, 'faceEmphasis': face_emphasis})})
+        assert send(store, pid, 'generationSpec.update', session=session,
+            versions=[ver('generation_spec', spec)], spec=changed).status == 'applied'
+        if with_reference:
+            image = BytesIO()
+            Image.new('RGB', (32, 32), 'red').save(image, 'PNG')
+            handle = uuid4()
+            writer = CreationAssets(store).uploads.begin(pid, handle, session, 'reference.png', expected_kind='image')
+            writer.write(image.getvalue())
+            writer.finish()
+            assert send(store, pid, 'asset.import', session=session, uploadHandle=handle,
+                name='reference.png', expectedKind='image').status == 'applied'
+            snapshot = store.snapshot(pid)
+            linked = send(store, pid, 'reference.add', session=session, versions=[
+                ver('canvas_item', snapshot.canvasItems[0]),
+                ver('generation_spec', snapshot.generationSpecs[0])], reference=dict(
+                id=uuid4(), projectId=pid, binding='pinned', source=asset_ref(snapshot.assets[0]),
+                targetSpecId=spec.id))
+            assert linked.status == 'applied', linked
+            if with_reference == 'duplicate':
+                source, _ = media(project, kind='image', title='Same image on canvas')
+                materialized = send(store, pid, 'canvas.materialize', session=session,
+                    versions=[ver('canvas_item', source)], itemId=source.id, asset=asset_ref(snapshot.assets[0]))
+                assert materialized.status == 'applied', materialized
+                snapshot = store.snapshot(pid)
+                linked = send(store, pid, 'reference.add', session=session, versions=[
+                    ver('canvas_item', snapshot.canvasItems[0]),
+                    ver('generation_spec', snapshot.generationSpecs[0])], reference=dict(
+                    id=uuid4(), projectId=pid, binding='follow_current', source=dict(id=source.id),
+                    targetSpecId=spec.id, order=1))
+                assert linked.status == 'applied', linked
+        for _ in range(2):
+            before = store.snapshot(pid)
+            target, spec = before.canvasItems[0], before.generationSpecs[0]
+            command = parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
+                expectedVersions=[ver('canvas_item', target), ver('generation_spec', spec)],
+                payload=dict(specId=spec.id, expectedSpecRevision=spec.revision, originItemId=target.id)))
+            receipt = await runner.execute(command, session=session)
+            assert receipt.status == 'accepted', receipt
+            await asyncio.gather(*(job.future for job in list(runner.jobs.values())))
+            after = store.snapshot(pid)
+            job = next(job for job in after.jobs if job.id in receipt.jobIds)
+            assert job.status == 'succeeded' and job.adopted
+            assert job.inputSnapshot.presetPrompt == expected
+            assert after.generationSpecs[0].prompt == user_prompt
+            assert after.generationSpecs[0].promptContent == content
+        assert len(provider.calls) == 2
+        for call in provider.calls:
+            assert len(call['referenceIds']) == int(bool(with_reference))
+            if face_emphasis:
+                assert '眼睛、鼻子和嘴留在画外' in call['prompt']
+                assert all(detail not in call['prompt'] for detail in ('卡通角色', '大头', '短颈', '无颈', '下巴'))
+            assert ('参考图' in call['prompt']) == bool(with_reference)
+            assert call['prompt'] == (f'{expected}\n\n{user_prompt}' if user_prompt else expected)
+            assert call['promptContent'] == (
+                [dict(type='text', text=expected + '\n\n'), dict(type='text', text=user_prompt)]
+                if user_prompt else [dict(type='text', text=expected)])
+    finally:
+        await runner.close()
+
 
 
 @pytest.mark.anyio
@@ -385,7 +546,11 @@ async def test_checkpoint_leaves_a_succeeded_job_unchanged(project):
 
 
 @pytest.mark.anyio
-async def test_checkpoint_does_not_retry_an_unrelated_rejection(project, monkeypatch):
+@pytest.mark.parametrize('issue_code, expected_code, attempts', [
+    ('invalid_input', 'operation_rejected', 1),
+    ('revision_conflict', 'revision_conflict', CHECKPOINT_ATTEMPTS),
+])
+async def test_checkpoint_reports_rejected_writes(project, monkeypatch, issue_code, expected_code, attempts):
     store, pid, session = project
     provider = Provider()
     runner, config = runtime(project, provider)
@@ -395,14 +560,14 @@ async def test_checkpoint_does_not_retry_an_unrelated_rejection(project, monkeyp
     calls = []
     def rejecting(work, apply, **kwargs):
         calls.append(work)
-        return SimpleNamespace(status='rejected', issues=(SimpleNamespace(code='invalid_input'),))
+        return SimpleNamespace(status='rejected', issues=(SimpleNamespace(code=issue_code),))
     monkeypatch.setattr(runner.projects, 'commit', rejecting)
     task = runner.task(store.snapshot(pid).jobs[0])
     task.update(status='running', phase='submit')
     with pytest.raises(ProjectError) as failure:
         runner.checkpoint(pid, task, runner.directory(pid))
-    assert failure.value.status == 409
-    assert len(calls) == 1
+    assert failure.value.status == 409 and failure.value.code == expected_code
+    assert len(calls) == attempts
     assert store.snapshot(pid).jobs[0].status == 'queued'
     await runner.close()
 

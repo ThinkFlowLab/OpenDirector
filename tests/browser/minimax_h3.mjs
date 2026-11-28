@@ -53,7 +53,55 @@ try {
     canvas.getContext("2d").fillRect(0, 0, 256, 256);
     return canvas.toDataURL("image/png").split(",")[1];
   });
+  // Hold the first save's background hydration until the next import has
+  // queued its local edit. No request, reducer or save result is replaced.
+  await page.evaluate(async (projectId) => {
+    const { workspaceProjection } = await import("/src/backend/workspace.ts");
+    const projection = workspaceProjection(projectId), read = projection.read;
+    const NativeImage = window.Image;
+    let release, heldSnapshot, held = 0, returned = 0, released = false, armed = false;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const restore = () => {
+      projection.read = read;
+      window.Image = NativeImage;
+      released = true;
+      release();
+    };
+    projection.read = async function(snapshot) {
+      const next = await read.call(this, snapshot);
+      if (!heldSnapshot && snapshot?.canvasItems.length === 1) heldSnapshot = snapshot;
+      if (!released && snapshot === heldSnapshot) {
+        held++;
+        await gate;
+        returned++;
+      }
+      return next;
+    };
+    window.Image = new Proxy(NativeImage, {
+      construct(target, args) {
+        const element = Reflect.construct(target, args);
+        // Register after the decoder's own onload handler. Its promise
+        // continuations queue the import before this native load listener runs.
+        queueMicrotask(() => element.addEventListener("load", () => {
+          if (!armed) return;
+          armed = false;
+          restore();
+        }, { once: true }));
+        return element;
+      },
+    });
+    window.__h3RefreshRace = {
+      held: () => held,
+      arm: () => { armed = true; },
+      restore,
+      report: () => ({ held, returned, released, restored: projection.read === read && window.Image === NativeImage }),
+    };
+  }, projectId);
   for (const name of ["first.png", "last.png"]) {
+    if (name === "last.png") {
+      await page.waitForFunction(() => window.__h3RefreshRace.held() > 0);
+      await page.evaluate(() => window.__h3RefreshRace.arm());
+    }
     await page
       .getByLabel("Choose local asset files", { exact: true })
       .setInputFiles({
@@ -65,10 +113,15 @@ try {
     for (let attempt = 0; attempt < 150; attempt++) {
       const current = await call(`/api/creation/projects/${projectId}`);
       if (current.canvasItems.length === count) break;
-      if (attempt === 149) throw Error(await page.locator("body").innerText());
+      if (attempt === 149) throw Error(`${name}: expected ${count} saved canvas items, received ${current.canvasItems.length}\n${await page.locator("body").innerText()}`);
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
+  const refresh = await page.evaluate(() => window.__h3RefreshRace.report());
+  assert.ok(refresh.held > 0);
+  assert.equal(refresh.returned, refresh.held);
+  assert.equal(refresh.released, true);
+  assert.equal(refresh.restored, true);
   const snapshot = await call(`/api/creation/projects/${projectId}`);
   assert.equal(snapshot.canvasItems.length, 2);
   const created = await page.evaluate(
@@ -153,18 +206,32 @@ try {
     await page.getByLabel("Choose Last frame", { exact: true }).inputValue(),
     "",
   );
+  const final = await call(`/api/creation/projects/${projectId}`);
+  assert.equal(final.generationSpecs.find((spec) => spec.id === created.specId).modelConfigId, model.id);
+  assert.equal(final.references.find((ref) => ref.active && ref.targetSpecId === created.specId && ref.role === "first_frame").source.id, snapshot.canvasItems[0].id);
+  assert.ok(!final.references.some((ref) => ref.active && ref.targetSpecId === created.specId && ref.role === "last_frame"));
+  for (const source of snapshot.canvasItems) {
+    assert.ok(final.canvasItems.some((item) => item.id === source.id));
+    const assetId = source.binding.objectRef.assetId;
+    const response = await fetch(`${api}/api/creation/projects/${projectId}/assets/${assetId}/content`, { headers });
+    assert.ok(response.ok);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from(png, "base64"));
+  }
   console.log(
     JSON.stringify({
       passed: true,
       checks: [
+        "pending second import survives background hydration",
         "official provider config",
         "explicit frame roles",
         "frame projection after reload",
         "editable tail slot",
         "tail clearing persists",
+        "saved source bytes and model survive reload",
       ],
     }),
   );
 } finally {
+  await page.evaluate(() => window.__h3RefreshRace?.restore()).catch(() => {});
   await browser.close();
 }

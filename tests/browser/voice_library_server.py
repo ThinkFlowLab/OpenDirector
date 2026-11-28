@@ -4,6 +4,7 @@ Run like creation_server.py. No GPU or MOSS account is contacted. Uploads still
 pass real ffprobe validation, and generation still validates the voice registry.
 """
 import io
+import json
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path
@@ -21,16 +22,38 @@ with wave.open(stream, 'wb') as audio:
 sample = stream.getvalue()
 uploads = {}
 calls = []
+search_catalog = [
+    {'id': 'search-unrelated', 'name': 'Unrelated voice'},
+    *[{'id': f'search-alto-{n:03d}', 'name': f'Alto {n:03d}'} for n in range(1, 152)],
+    {'id': 'search-youth', 'name': '青年'},
+    {'id': 'search-younger', 'name': '世界最狂青年音', 'preview_url': '/preview.wav'},
+]
 
 
 def provider(request):
     calls.append(dict(method=request.method, url=str(request.url)))
+    if request.url.host == 'api.minimax.cn':
+        assert request.method == 'POST' and request.url.path == '/v1/get_voice'
+        assert json.loads(request.content) == {'voice_type': 'system'}
+        return httpx.Response(200, json={'base_resp': {'status_code': 0}, 'system_voice': [
+            {'voice_id': 'Chinese (Mandarin)_Reliable_Executive', 'voice_name': 'Narrator'},
+            {'voice_id': 'Santa_Claus ', 'voice_name': 'Santa Claus'},
+        ]})
     cloud = request.url.host == 'api.mosi.cn'
     boundary = request.url.host
     records = uploads.setdefault(boundary, {})
     if request.url.path == '/preview.wav':
         return httpx.Response(200, content=sample, headers={'Content-Type': 'audio/wav'})
     if request.method == 'GET':
+        if cloud and request.headers.get('authorization') == 'Bearer voice-search-fixture':
+            offset = int(request.url.params.get('after', '0'))
+            limit = int(request.url.params['limit'])
+            end = min(offset + limit, len(search_catalog))
+            return httpx.Response(200, json={
+                'data': search_catalog[offset:end],
+                'has_more': end < len(search_catalog),
+                'next_cursor': str(end) if end < len(search_catalog) else None,
+            })
         if cloud:
             if request.url.params.get('after') or request.url.params.get('cursor'):
                 return httpx.Response(200, json={'data': list(records.values()), 'has_more': False})

@@ -1,3 +1,5 @@
+
+import pytest
 from types import SimpleNamespace
 
 from opendirector_api.localization import (
@@ -7,8 +9,25 @@ from opendirector_api.localization import (
 )
 
 
+pytestmark = pytest.mark.cpu
+
+
 def request(language: str):
     return SimpleNamespace(headers={"accept-language": language})
+
+
+def test_capability_messages_preserve_the_specific_input_failure():
+    cases = [
+        ('capability_unavailable', '该模型不支持文字回复。', 'This model does not support text replies.'),
+        ('capability_unavailable', '请添加图片。', 'Add images.'),
+        ('capability_unavailable', '服务未开放图片编辑。', 'The service has not enabled image editing.'),
+        ('image_input_count', '最多支持 4 张图片，当前为 5 张。', 'Up to 4 images; 5 added.'),
+        ('tool_source_count', '该工具需要 2 张来源图片。', 'This tool requires 2 source images.'),
+        ('image_input_mask', '选区与图片的尺寸不一致。', 'The selection and image dimensions must match.'),
+    ]
+    for code, chinese, english in cases:
+        assert localized_error(request('en-US'), chinese=chinese, status=422, code=code) == english
+        assert localized_error(request('zh-CN'), chinese=chinese, status=422, code=code) == chinese
 
 
 def test_accept_language_uses_the_primary_language() -> None:
@@ -94,3 +113,10 @@ def test_streaming_and_background_jobs_use_the_same_language_rule() -> None:
         )
         == "The item changed or is busy. Reload it and try again."
     )
+
+
+def test_another_window_is_not_reported_as_busy_storage() -> None:
+    chinese = "该项目正在其他窗口中打开，请先关闭后再试。"
+    assert localized_error(request("zh-CN"), chinese=chinese, status=409, code="project_open_elsewhere") == chinese
+    english = localized_error(request("en-US"), chinese=chinese, status=409, code="project_open_elsewhere")
+    assert "another window" in english and "busy" not in english

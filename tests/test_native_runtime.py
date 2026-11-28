@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 import httpx
@@ -28,9 +28,16 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.chat_completions import ChatCompletions
 from opendirector_api.main import create_app
 
+# Includes subprocess/gateway integration; retain the dedicated mocked-model
+# bundled CLI regression in Release checks independently of layer selection.
+pytestmark = [pytest.mark.cpu, pytest.mark.merge]
+
 FAKE = '''import json, os, subprocess, sys
 from pathlib import Path
 prompt = sys.stdin.read()
+assert '3 to 5 distinct suggestions' in prompt, 'missing suggested reply count'
+assert 'at most 80 characters per suggestion' in prompt, 'missing suggested reply length limit'
+assert '[opendirector-replies]: #' in prompt.splitlines(), 'missing suggested reply marker'
 assert 'Segment plan' not in prompt
 if 'Continue plan' in prompt:
  assert ('Save a plan' in prompt) == (os.environ.get('TEST_MISSING_ROLLOUT') == '1')
@@ -71,9 +78,9 @@ else:
 
 @pytest.fixture(autouse=True)
 def example_skill(tmp_path):
-    directory = tmp_path / '.opendirector/skills/character-replacement'
+    directory = tmp_path / '.opendirector/skills/od-native-runtime-test-skill'
     directory.mkdir(parents=True)
-    (directory / 'SKILL.md').write_text('---\nname: character-replacement\ndescription: Test replacement planning\n---\nCreate a 24-FPS constant-frame-rate working copy')
+    (directory / 'SKILL.md').write_text('---\nname: od-native-runtime-test-skill\ndescription: Test replacement planning\n---\nCreate a 24-FPS constant-frame-rate working copy')
 
 
 def project(client):
@@ -131,12 +138,12 @@ def test_native_events_real_cli_and_shared_write(tmp_path, monkeypatch, runtime,
     monkeypatch.setattr(native, 'command', command)
     monkeypatch.setattr(native, 'executable', lambda _: sys.executable)
     async def fixture_skills(*args):
-        entry = tmp_path / '.opendirector/skills/character-replacement/SKILL.md'
-        return [{'name': 'character-replacement', 'description': 'Test', 'filePath': str(entry)}]
+        entry = tmp_path / '.opendirector/skills/od-native-runtime-test-skill/SKILL.md'
+        return [{'name': 'od-native-runtime-test-skill', 'description': 'Test', 'filePath': str(entry)}]
     monkeypatch.setattr('opendirector_api.agent.skills', fixture_skills)
     with TestClient(create_app(local), headers={'X-OpenDirector-Request':'1','X-OpenDirector-Session':str(uuid4())}) as client:
         path = project(client)
-        turn = {'id':str(uuid4()),'runtime':runtime,'runtimeModel':'test-model','text':'Save a plan','skills':['character-replacement']}
+        turn = {'id':str(uuid4()),'runtime':runtime,'runtimeModel':'test-model','text':'Save a plan','skills':['od-native-runtime-test-skill']}
         if runtime == 'default':
             turn['modelId'] = config['id']
         response = client.post(path + '/assistant/turns', json=turn)
@@ -180,7 +187,7 @@ def test_claude_continuation_refreshes_skills_using_real_command(tmp_path, monke
 from pathlib import Path
 prompt = sys.stdin.read()
 marker = Path('first-turn.txt')
-skill = Path('plugin/skills/character-replacement/SKILL.md').read_text()
+skill = Path('plugin/skills/od-native-runtime-test-skill/SKILL.md').read_text()
 if marker.exists():
  assert sys.argv[sys.argv.index('--resume') + 1] == 'fixture-session'
  assert marker.read_text() == str(Path.cwd())
@@ -194,10 +201,10 @@ print(json.dumps({'type':'assistant','session_id':'fixture-session',
 ''')
     monkeypatch.setattr(native, 'executable', lambda _: str(script))
     directory = tmp_path / 'project'; directory.mkdir()
-    entry = tmp_path / '.opendirector/skills/character-replacement/SKILL.md'
+    entry = tmp_path / '.opendirector/skills/od-native-runtime-test-skill/SKILL.md'
     common = dict(runtime='claude', project_id=uuid4(), session=str(uuid4()),
         conversation_id=uuid4(), directory=directory, config=None, selected_skills=[],
-        skills=[{'name': 'character-replacement', 'filePath': str(entry)}])
+        skills=[{'name': 'od-native-runtime-test-skill', 'filePath': str(entry)}])
     async def closed(): pass
     async def exercise():
         records = []
@@ -215,7 +222,7 @@ print(json.dumps({'type':'assistant','session_id':'fixture-session',
         assert records[0]['directory'] == records[1]['directory']
         workspaces = list(directory.glob('agent-runs/*/work'))
         assert len(workspaces) == 1
-        assert (workspaces[0] / 'plugin/skills/character-replacement/SKILL.md').read_text() == 'second skill version'
+        assert (workspaces[0] / 'plugin/skills/od-native-runtime-test-skill/SKILL.md').read_text() == 'second skill version'
     asyncio.run(exercise())
 
 
@@ -250,7 +257,33 @@ def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
             config = json.loads(env['OPENCODE_CONFIG_CONTENT'])
             assert 'steps' not in config['agent']['opendirector']
             assert config['permission']['*'] == 'deny'
+            assert config['permission']['read'] == 'allow'
             assert config['skills']['paths'] == [str(work / '.agents/skills')]
+            if runtime == 'default':
+                assert config['agent']['title'] == {'disable': True}
+            else:
+                assert 'title' not in config['agent']
+
+
+def test_codex_windows_launch_uses_standalone_sandbox_and_keeps_project_bridge(tmp_path, monkeypatch):
+    monkeypatch.setattr(native.sys, 'platform', 'win32')
+    monkeypatch.setattr(native, 'executable', lambda _: sys.executable)
+    monkeypatch.setattr(native, 'codex_isolation_flags', lambda _: ())
+    monkeypatch.setenv('CODEX_WINDOWS_REGISTERED_CORE', '1')
+    monkeypatch.setenv('CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY', 'DesktopRegistration')
+    monkeypatch.setenv('HTTPS_PROXY', 'http://127.0.0.1:1080')
+    bridge = {'OPENDIRECTOR_AGENT_HOST': '127.0.0.1', 'OPENDIRECTOR_AGENT_PORT': '8001'}
+
+    args, env = native.command('codex', tmp_path, '', 'token', None, '', [], bridge_env=bridge)
+
+    assert 'CODEX_WINDOWS_REGISTERED_CORE' not in env
+    assert 'CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY' not in env
+    assert os.environ['CODEX_WINDOWS_REGISTERED_CORE'] == '1'
+    assert env['HTTPS_PROXY'] == 'http://127.0.0.1:1080'
+    assert all(env[key] == value for key, value in bridge.items())
+    assert Path(env['PATH'].split(os.pathsep)[0]) == tmp_path / '.opendirector-bin'
+    assert args[args.index('--sandbox') + 1] == 'workspace-write'
+    assert 'windows.sandbox="elevated"' in args
 
 
 def test_codex_only_passes_supported_isolation_flags(tmp_path, monkeypatch):
@@ -274,6 +307,17 @@ def test_codex_inherits_windows_system_proxy_without_overriding_explicit_proxy(m
     assert 'HTTPS_PROXY' not in os.environ
     monkeypatch.setenv('HTTPS_PROXY', 'http://127.0.0.1:8002')
     assert native.codex_environment()['HTTPS_PROXY'] == 'http://127.0.0.1:8002'
+
+
+@pytest.mark.parametrize('platform', ['win32', 'linux', 'darwin'])
+def test_codex_isolation_preserves_windows_workspace_sandbox(tmp_path, monkeypatch, platform):
+    monkeypatch.setattr(native, 'sys', SimpleNamespace(platform=platform))
+    monkeypatch.setattr(native, 'executable', lambda _: 'codex')
+    monkeypatch.setattr(native, 'codex_isolation_flags', lambda _: ('--ignore-user-config', '--ignore-rules'))
+    args, _ = native.command('codex', tmp_path, '', '', None, '', [])
+    assert ('windows.sandbox="elevated"' in args) == (platform == 'win32')
+    assert args[args.index('--sandbox') + 1] == 'workspace-write'
+    assert '--dangerously-bypass-approvals-and-sandbox' not in args
 
 
 def test_codex_reconnect_does_not_end_turn():
@@ -312,25 +356,22 @@ def test_opencode_resume_rejects_unexpected_or_changing_session_ids(tmp_path, mo
     assert json.loads(saved.read_text()) == previous
 
 
-@pytest.mark.parametrize("runtime", ["default"])
-@pytest.mark.parametrize("resume", [False, True])
-def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume, monkeypatch, request):
+@pytest.fixture
+def real_opencode_worker(tmp_path, monkeypatch, request):
+    """Bound real CLI cases in isolated workers and clean up owned processes."""
     if os.environ.get('OPENDIRECTOR_REAL_CLI') != '1':
         pytest.skip('Set OPENDIRECTOR_REAL_CLI=1 to run the bundled CLI integration')
-    if native.executable('default') is None:
-        pytest.skip('Bundled OpenCode is not installed')
+    assert native.executable('default') is not None, 'Bundled OpenCode is not installed'
+    timeout = 105 if 'windows_unicode_pipeline' in request.node.name else 60
     if os.environ.get('OPENDIRECTOR_REAL_CLI_WORKER') != '1':
-        case = f'{__file__}::test_real_opencode_native_skill_and_gateway_write[{resume}-{runtime}]'
-        result = subprocess.run([sys.executable, '-m', 'pytest', case, '-s', '-q'],
+        result = subprocess.run([sys.executable, '-m', 'pytest', request.node.nodeid, '-s', '-q'],
             env={**os.environ, 'OPENDIRECTOR_REAL_CLI_WORKER': '1'},
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=90)
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8", errors="replace", timeout=timeout + 30)
         assert result.returncode == 0, result.stdout
-        return
+        return False
 
     for name in ('XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME'):
         monkeypatch.setenv(name, str(tmp_path / name.lower()))
-    # A watchdog in the isolated worker can report all thread stacks and kill
-    # CLI process groups even when TestClient is blocked waiting for a stream.
     from opendirector.agent.process import _signal_tree
     processes = []
     spawn = asyncio.create_subprocess_exec
@@ -342,7 +383,7 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
             await asyncio.Event().wait()
         return process
     monkeypatch.setattr(asyncio, 'create_subprocess_exec', tracked_spawn)
-    def timeout():
+    def timed_out():
         print('Real OpenCode integration timed out; thread stacks:', file=sys.stderr, flush=True)
         faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
         for process, group in reversed(processes):
@@ -355,11 +396,97 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
                 except OSError as error:
                     print(f'Could not stop CLI process {process.pid}: {error}', file=sys.stderr, flush=True)
         os._exit(1)
-    watchdog = threading.Timer(10 if os.environ.get('OPENDIRECTOR_TEST_CLI_STALL') else 60, timeout)
+    watchdog = threading.Timer(10 if os.environ.get('OPENDIRECTOR_TEST_CLI_STALL') else timeout, timed_out)
     watchdog.daemon = True
     watchdog.start()
     request.addfinalizer(watchdog.cancel)
+    return True
+
+
+@pytest.mark.parametrize('reasoning', [False, True], ids=['plain', 'thinking'])
+def test_real_opencode_default_hello_saves_direct_reply(tmp_path, monkeypatch, real_opencode_worker, reasoning):
+    if not real_opencode_worker:
+        return
     requests = []
+    reply = 'Hello! How can I help?'
+
+    class GreetingStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            deltas = [{'role': 'assistant', 'content': ''}]
+            if reasoning:
+                deltas.append({'reasoning_content': 'A greeting needs no project tools.'})
+            deltas.extend([{'content': 'Hello! '}, {'content': 'How can I help?'}])
+            for delta in [*deltas, {}]:
+                chunk = {'id': 'hello', 'object': 'chat.completion.chunk', 'created': 1,
+                    'model': 'test-model', 'choices': [{'index': 0, 'delta': delta,
+                        'finish_reason': None if delta else 'stop'}]}
+                frame = ('data: ' + json.dumps(chunk) + '\n\n').encode()
+                for index in range(0, len(frame), 7):
+                    yield frame[index:index + 7]
+                await asyncio.sleep(.01)
+            yield b'data: [DONE]\n\n'
+
+    def model(request):
+        # Count every provider call, including title generation and retries.
+        requests.append(json.loads(request.content))
+        assert request.headers['authorization'] == 'Bearer server-only-key'
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=GreetingStream())
+
+    async def no_skills(*args):
+        return []
+    monkeypatch.setattr('opendirector_api.agent.skills', no_skills)
+    local = LocalProjects(tmp_path)
+    config = ModelConfigs(tmp_path).save('agent', 'http://test.invalid/v1', 'test-model', 'server-only-key')
+    provider = ChatCompletions(httpx.MockTransport(model))
+    with TestClient(create_app(local, chat_provider=provider), headers={
+            'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}) as client:
+        path = project(client)
+        assert client.get(path + '/assistant').json()['messages'] == []
+        turn = {'id': str(uuid4()), 'runtime': 'default', 'modelId': config['id'], 'text': 'hello'}
+        response = client.post(path + '/assistant/turns', json=turn)
+        assert response.status_code == 200
+        events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
+        assert events[-1]['type'] == 'end' and events[-1]['error'] is None, events
+        assert ''.join(event['text'] for event in events if event['type'] == 'delta') == reply
+        assert not any(event['type'] == 'tool' for event in events)
+        assert len(requests) == 1
+        # Keep the production tool surface available: the test must not achieve
+        # zero calls by disabling tools or forcing tool_choice=none.
+        assert requests[0]['tool_choice'] == 'auto'
+        assert any(tool['function']['name'] == 'bash' for tool in requests[0]['tools'])
+        saved = client.get(path + '/assistant').json()
+        assert len(saved['messages']) == 2
+        assert saved['messages'][0]['text'] == 'hello'
+        summaries = client.get(path + '/assistant/conversations').json()['items']
+        assert len(summaries) == 1 and summaries[0]['title'] == 'hello'
+        assistant = saved['messages'][-1]
+        assert assistant['text'] == reply and assistant['status'] == 'complete'
+        assert assistant.get('tools', []) == []
+        disk = json.loads(next(local.root.rglob('conversation.json')).read_text(encoding='utf-8'))
+        assert disk['messages'] == saved['messages']
+        snapshot = client.get(path).json()
+        assert snapshot['assets'] == [] and snapshot['jobs'] == []
+        trace = next(local.root.rglob(f"{turn['id']}.opencode.jsonl"))
+        native_events = [json.loads(line).get('native', {}) for line in trace.read_text(encoding='utf-8').splitlines()]
+        assert not any(event.get('type') == 'tool_use' for event in native_events)
+        assert sum(event.get('type') == 'step_finish' for event in native_events) == 1
+        model_trace = next(local.root.rglob(f"{turn['id']}.model.jsonl"))
+        model_events = [json.loads(line) for line in model_trace.read_text(encoding='utf-8').splitlines()]
+        assert sum(event['event'] == 'model.request' for event in model_events) == 1
+        assert sum(event['event'] == 'model.completed' for event in model_events) == 1
+        # Replaying an accepted turn must not submit another provider request.
+        assert '已接受' in client.post(path + '/assistant/turns', json=turn).text
+        assert len(requests) == 1
+        assert client.get(path + '/assistant').json()['messages'] == saved['messages']
+
+
+@pytest.mark.parametrize("runtime", ["default"])
+@pytest.mark.parametrize("resume", [False, True])
+def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume, monkeypatch, real_opencode_worker):
+    if not real_opencode_worker:
+        return
+    requests = []
+    write_receipts = []
     def model(request):
         payload = json.loads(request.content)
         if payload.get('tools'):
@@ -371,7 +498,7 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
             call = None
         elif count == 1:
             assert any(tool['function']['name'] == 'skill' for tool in payload['tools'])
-            call = {'name':'skill','arguments':json.dumps({'name':'character-replacement'})}
+            call = {'name':'skill','arguments':json.dumps({'name':'od-native-runtime-test-skill'})}
         elif count == 2:
             assert 'Create a 24-FPS constant-frame-rate working copy' in json.dumps(payload['messages'])
             assert not any('opendirector_' in tool['function']['name'] for tool in payload['tools'])
@@ -379,13 +506,20 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
                 'command': "opendirector asset write-text --name real-native.md --text 'Real OpenCode plan'",
                 'description': 'Register the plan in the project'})}
         else:
+            if count == 3:
+                receipt = json.loads(next(message['content'] for message in payload['messages']
+                    if message.get('role') == 'tool' and message.get('tool_call_id') == 'call-2'))
+                assert receipt['status'] == 'applied'
+                write_receipts.append(receipt)
             call = None
         delta = {'tool_calls':[{'index':0,'id':f'call-{count}','type':'function','function':call}]} if call else {'content':'OpenCode ready.'}
         chunk = {'id':f'completion-{count}','object':'chat.completion.chunk','created':1,'model':'test-model',
             'choices':[{'index':0,'delta':delta,'finish_reason':None}]}
         finish = {**chunk,'choices':[{'index':0,'delta':{},'finish_reason':'tool_calls' if call else 'stop'}]}
+        reasoning = {**chunk, 'choices': [{'index': 0,
+            'delta': {'reasoning_content': 'Check the request.'}, 'finish_reason': None}]}
         return httpx.Response(200,headers={'content-type':'text/event-stream'},content=(
-            'data: '+json.dumps(chunk)+'\n\ndata: '+json.dumps(finish)+'\n\ndata: [DONE]\n\n').encode())
+            'data: '+json.dumps(reasoning)+'\n\ndata: '+json.dumps(chunk)+'\n\ndata: '+json.dumps(finish)+'\n\ndata: [DONE]\n\n').encode())
     local = LocalProjects(tmp_path)
     config = ModelConfigs(tmp_path).save('agent','http://test.invalid/v1','test-model','server-only-key')
     provider = ChatCompletions(httpx.MockTransport(model))
@@ -393,18 +527,21 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
         path = project(client)
         print('stage: discover skills', flush=True)
         catalog = client.get(path + '/assistant/skills').json()
-        assert {item['name'] for item in catalog} == {'character-replacement'}
+        assert 'od-native-runtime-test-skill' in {item['name'] for item in catalog}
         assert all(set(item) == {'name', 'description', 'source'} for item in catalog)
-        assert client.put(path + '/assistant/draft', json={'draft': 'Save a plan', 'skills': ['character-replacement'],
+        assert client.put(path + '/assistant/draft', json={'draft': 'Save a plan', 'skills': ['od-native-runtime-test-skill'],
             'harnessModels': {'codex': 'test-model'}}).status_code == 200
         turn = {'id':str(uuid4()), 'modelId':config['id'], 'runtime':runtime,
-            'text':'Use the skill and save a plan.', 'skills':['character-replacement']}
+            'text':'Use the skill and save a plan.', 'skills':['od-native-runtime-test-skill']}
         print('stage: fresh turn', flush=True)
         response = client.post(path + '/assistant/turns', json=turn)
         events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
         assert events[-1]['error'] is None, events
         assert events[-1]['conversation']['messages'][-1]['text'] == 'OpenCode ready.'
-        assert client.get(path).json()['assets'][0]['name'] == 'real-native.md'
+        assets = client.get(path).json()['assets']
+        assert len(assets) == 1 and assets[0]['name'] == 'real-native.md'
+        assert len(write_receipts) == 1
+        assert assets[0]['id'] == write_receipts[0]['assetId']
         assert len(requests) == 3
         saved = client.get(path + '/assistant').json()
         assert saved['skills'] == []
@@ -432,6 +569,178 @@ def test_real_opencode_native_skill_and_gateway_write(tmp_path, runtime, resume,
                 if json.loads(line).get('native', {}).get('sessionID')} for trace in traces]
         assert len(ids) == 2 and all(len(value) == 1 for value in ids)
         assert ids[0] == ids[1]
+
+
+@pytest.mark.skipif(os.name != 'nt' or os.environ.get('OPENDIRECTOR_REAL_WINDOWS_PIPELINE') != '1',
+    reason='Set OPENDIRECTOR_REAL_WINDOWS_PIPELINE=1 to qualify OpenCode on Windows PowerShell 5.1')
+@pytest.mark.parametrize('runtime', ['default', 'opencode'])
+def test_real_opencode_windows_unicode_pipeline(tmp_path, monkeypatch, real_opencode_worker, runtime, request):
+    if not real_opencode_worker:
+        return
+    from opendirector.agent.windows_powershell import system_powershell
+    from opendirector.infrastructure.creation_projects import CreationProjects
+
+    monkeypatch.setenv('SHELL', str(system_powershell()))
+    monkeypatch.delenv('PSModulePath', raising=False)
+    monkeypatch.setenv('PSExecutionPolicyPreference', 'Restricted')
+    monkeypatch.setenv('PYTHONUTF8', '0')
+    monkeypatch.delenv('PYTHONIOENCODING', raising=False)
+    local = LocalProjects(tmp_path)
+    configs = ModelConfigs(tmp_path)
+    config = configs.save('agent', 'http://test.invalid/v1', 'test-model', 'server-only-key')
+    image = configs.save('image', 'http://test.invalid/v1', 'test-image', '', auth_mode='none')
+    prompts = ('第一镜：窗边的猫\n第二镜：𠮷 🐈? "推近"', '窗边的猫说：\'再来一次\'\n𠮷 🐈?')
+    expected_nodes = {}
+    expected_assets = {}
+    sessions = []
+    tool_commands = []
+    requests = []
+
+    def pipeline(payload, command):
+        body = json.dumps({'payload': payload}, ensure_ascii=False).replace("'", "''")
+        return f"'{body}' | opendirector {command} --file -"
+
+    def model(request):
+        payload = json.loads(request.content)
+        if not payload.get('tools'):
+            return httpx.Response(200, headers={'content-type': 'text/event-stream'}, content=(
+                'data: {"id":"title","choices":[{"index":0,"delta":{"content":"Storyboard"},"finish_reason":"stop"}]}\n\n'
+                'data: [DONE]\n\n'))
+        messages = payload['messages']
+        index = len(requests)
+        requests.append(messages)
+        if index % 2 == 0:
+            content = messages[-1]['content']
+            assert 'Use opendirector for project changes.\n' in content
+            assert 'OutputEncoding' not in json.dumps(messages)
+            work = content.split('Execution directory: ', 1)[1].splitlines()[0]
+            command = tool_commands[index // 2]
+            delta = {'tool_calls': [{'index': 0, 'id': f'write-{index}', 'type': 'function',
+                'function': {'name': 'bash', 'arguments': json.dumps({
+                    'command': command, 'workdir': work, 'description': 'Save a Chinese storyboard'})}}]}
+        else:
+            delta = {'content': 'Saved.'}
+        chunk = {'id': f'completion-{index}', 'object': 'chat.completion.chunk', 'created': 1, 'model': 'test-model'}
+        frames = [dict(chunk, choices=[{'index': 0, 'delta': delta, 'finish_reason': None}]),
+                  dict(chunk, choices=[{'index': 0, 'delta': {}, 'finish_reason': 'stop' if index % 2 else 'tool_calls'}])]
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'},
+            content=''.join(f'data: {json.dumps(frame)}\n\n' for frame in frames) + 'data: [DONE]\n\n')
+
+    setup = (
+        "$ErrorActionPreference = 'Stop'\n"
+        "if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) { throw 'Expected 5.1' }\n"
+        "if ($env:PSExecutionPolicyPreference -ne 'Restricted') { throw 'Expected Restricted' }\n"
+        "if ($env:PYTHONUTF8 -ne '0' -or (Test-Path Env:PYTHONIOENCODING)) { throw 'Expected legacy Python defaults' }\n"
+        "[IO.File]::WriteAllText((Join-Path $PWD.Path 'policy-probe.ps1'), 'exit 19')\n"
+        "try { & .\\policy-probe.ps1; throw 'Expected scripts to be blocked' } "
+        "catch [System.Management.Automation.PSSecurityException] {}\n"
+        "$launcher = (Get-Command opendirector).Source\n"
+        "if ($launcher -ne (Join-Path $PWD.Path '.opendirector-bin\\opendirector.cmd')) { throw 'Wrong launcher' }\n"
+        "Write-Output \"PS 5.1 Restricted $launcher\"\n"
+        "opendirector --help\n"
+        "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n"
+        "$ErrorActionPreference = 'Continue'\n"
+        "opendirector asset write-text --unknown-option 2>$null\n"
+        "if ($LASTEXITCODE -ne 2) { throw 'Wrong CLI exit code' }\n"
+        "$ErrorActionPreference = 'Stop'\n"
+    )
+    if runtime == 'opencode':
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        if native.executable('opencode') is None:
+            pytest.skip('External OpenCode is not installed')
+
+        class FixtureProvider(BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers['Content-Length']))
+                response = model(httpx.Request('POST', 'http://localhost/v1/chat/completions', content=body))
+                self.send_response(response.status_code)
+                self.send_header('Content-Type', response.headers['content-type'])
+                self.send_header('Content-Length', str(len(response.content)))
+                self.end_headers()
+                self.wfile.write(response.content)
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), FixtureProvider)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        def stop_fixture():
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+        request.addfinalizer(stop_fixture)
+        settings = tmp_path / 'config'
+        monkeypatch.setenv('XDG_CONFIG_HOME', str(settings))
+        opencode_config = settings / 'opencode' / 'opencode.json'
+        opencode_config.parent.mkdir(parents=True)
+        opencode_config.write_text(json.dumps({
+            'shell': str(system_powershell()),
+            'small_model': 'fixture/test-model',
+            'provider': {'fixture': {'npm': '@ai-sdk/openai-compatible', 'name': 'Test provider',
+                'options': {'baseURL': f'http://127.0.0.1:{server.server_port}/v1', 'apiKey': 'test-key'},
+                'models': {'test-model': {'name': 'Test model'}}}},
+        }), encoding='utf-8')
+
+    provider = ChatCompletions(httpx.MockTransport(model))
+    with TestClient(create_app(local, chat_provider=provider), headers={
+            'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}) as client:
+        path = project(client)
+        pid = path.rsplit('/', 1)[-1]
+        for index, prompt in enumerate(prompts):
+            spec_id, item_id = str(uuid4()), str(uuid4())
+            title = f'窗边的小猫 🐈 {index + 1}'
+            name = f'分镜 {index + 1}.md'
+            node = {
+                'spec': {'id': spec_id, 'projectId': pid, 'kind': 'image', 'purpose': 'generation',
+                         'modelConfigId': image['id'], 'prompt': prompt, 'parameters': {'size': '1024x1024'}},
+                'item': {'id': item_id, 'projectId': pid, 'kind': 'image', 'title': title,
+                         'position': {'x': 0, 'y': 0}, 'width': 512, 'height': 512,
+                         'binding': {'role': 'generation', 'objectRef': {'id': spec_id}}},
+            }
+            expected_nodes[item_id] = (title, prompt)
+            expected_assets[name] = prompt.encode()
+            tool_commands.append(
+                ('using namespace System.Text\n' if index else '') + setup
+                + pipeline(node, 'canvas create-generation') + '\n'
+                + "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n"
+                + pipeline({'name': name, 'text': prompt}, 'asset write-text') + '\n'
+                + "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n"
+                + "Write-Output 'CLI project snapshot:'\n"
+                + 'opendirector project show')
+            turn = {'id': str(uuid4()), 'runtime': runtime, 'modelId': config['id'],
+                    **({'runtimeModel': 'fixture/test-model'} if runtime == 'opencode' else {}),
+                    'text': f'保存第 {index + 1} 个分镜，暂时不用出图。'}
+            response = client.post(path + '/assistant/turns', json=turn)
+            events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
+            assert response.status_code == 200 and events[-1]['error'] is None, events
+            trace = next(local.root.rglob(f"{turn['id']}.opencode.jsonl"))
+            event, = [native_event for line in trace.read_text(encoding='utf-8').splitlines()
+                      if (native_event := json.loads(line).get('native', {})).get('type') == 'tool_use']
+            sessions.append(event['sessionID'])
+            shell_call = event['part']
+            assert shell_call['state']['input']['command'] == tool_commands[index]
+            assert shell_call['state']['metadata']['exit'] == 0, shell_call
+            output = shell_call['state'].get('output', '')
+            assert 'PS 5.1 Restricted' in output and 'opendirector.cmd' in output and 'Usage:' in output, shell_call
+            assert output.count('"status": "applied"') == 2, shell_call
+            _, marker, raw_snapshot = output.partition('CLI project snapshot:')
+            assert marker, shell_call
+            reported = json.loads(raw_snapshot)
+            item = next(item for item in reported['canvasItems'] if item['id'] == item_id)
+            spec = next(spec for spec in reported['generationSpecs'] if spec['id'] == item['binding']['objectRef']['id'])
+            assert (item['title'], spec['prompt']) == (title, prompt)
+
+    assert len(requests) == len(prompts) * 2
+    assert len(set(sessions)) == 1
+    snapshot = CreationProjects(LocalProjects(tmp_path)).snapshot(UUID(pid))
+    prompts_by_id = {str(spec.id): spec.prompt for spec in snapshot.generationSpecs}
+    nodes = {str(item.id): (item.title, prompts_by_id[str(item.binding.objectRef.id)])
+             for item in snapshot.canvasItems}
+    directory = next(local.root.rglob('project.json')).parent
+    assets = {asset.name: (directory / asset.path).read_bytes() for asset in snapshot.assets}
+    assert not snapshot.jobs
+    assert (nodes, assets) == (expected_nodes, expected_assets)
 
 
 def test_real_opencode_watchdog_cleans_up_stalled_cli(tmp_path):

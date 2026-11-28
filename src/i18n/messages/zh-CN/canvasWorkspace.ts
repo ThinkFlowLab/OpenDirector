@@ -1,5 +1,7 @@
 /** Canvas workspace shell: topbar, side panels, menus, dialogs and toasts. */
 export const canvasWorkspace = {
+  "canvas.workspace.preview.mode": "预览模式",
+  "canvas.workspace.preview.request": "在此编辑",
   "canvas.workspace.help.toggleAssistant": "打开 / 收起 AI 对话",
   "canvas.workspace.help.doubleShift": "连按两次 Shift",
 
@@ -87,7 +89,6 @@ export const canvasWorkspace = {
   "canvas.workspace.empty.title": "你的故事，由你执导",
   "canvas.workspace.empty.hint": "双击画布创建节点，或拖入你的素材",
   "canvas.workspace.empty.configureModels": "配置模型",
-  "canvas.workspace.empty.example": "体验示例画布",
   "canvas.workspace.empty.tagline": "参考连接 · 自由编排 · 本机自动保存",
 
   "canvas.workspace.loading.opening": "正在打开画布…",
@@ -122,6 +123,17 @@ export const canvasWorkspace = {
   "canvas.workspace.selection.duplicate": "复制副本",
   "canvas.workspace.selection.deleteSelected": "删除所选",
 
+  "canvas.workspace.group.noRunnableNodes": "分组内没有可运行的生成节点：需要先选好模型并填写提示词。",
+  "canvas.workspace.group.workflowStarted": {
+    one: "开始运行工作流，共 {count} 个节点。",
+    other: "开始运行工作流，共 {count} 个节点。",
+  },
+  "canvas.workspace.group.workflowDone": {
+    one: "工作流已完成，{count} 个节点全部生成成功。",
+    other: "工作流已完成，{count} 个节点全部生成成功。",
+  },
+  "canvas.workspace.group.workflowIncomplete": "工作流已结束：成功 {succeeded} 个，失败 {failed} 个，因上游失败或循环引用跳过 {skipped} 个。",
+
   "canvas.workspace.menu.rename": "重命名",
   "canvas.workspace.menu.addDownstream": "添加下游节点",
   "canvas.workspace.menu.copy": "复制",
@@ -131,6 +143,11 @@ export const canvasWorkspace = {
     "跨画布粘贴失败，未粘贴任何节点：{error}",
   "canvas.workspace.menu.duplicate": "复制副本",
   "canvas.workspace.menu.group": "编组",
+  "canvas.workspace.menu.enableRunLayout": "加入 Run 自动布局",
+  "canvas.workspace.menu.disableRunLayout": "退出 Run 自动布局",
+  "canvas.workspace.menu.organizeRuns": "整理 Run",
+  "canvas.workspace.menu.lockRun": "锁定 Run",
+  "canvas.workspace.menu.runGroupChanged": "分组已发生变化，请选择一个未锁定的顶层分组后重试。",
   "canvas.workspace.menu.stackSelection": "资源堆叠",
   "canvas.workspace.menu.ungroup": "取消编组",
   "canvas.workspace.menu.autoArrange": "自动排列",
@@ -378,4 +395,36 @@ export const canvasWorkspace = {
     "主体视频不能超过 15 秒",
   "canvas.workspace.referenceIssue.sourceDurationMissing":
     "请先读取视频或音频的实际时长，再添加到目标节点",
+  // Example canvas picker: download and import a hosted sample.
+  "canvas.example.dialog.title": "选择示例画布",
+  "canvas.example.dialog.hint": "选中后会下载并导入到你的本机，导入完成即可继续编辑。",
+  "canvas.example.dialog.empty": "暂时没有可用的示例画布。",
+  "canvas.example.action.import": "下载并导入",
+  "canvas.example.action.retry": "重试",
+  "canvas.example.action.cancelDownload": "取消下载",
+  "canvas.example.action.close": "关闭",
+  "canvas.example.action.dismiss": "忽略",
+  "canvas.example.action.manual": "无法下载？手动导入",
+  "canvas.example.state.downloading": "正在下载…",
+  "canvas.example.state.importing": "正在导入…",
+  "canvas.example.state.done": "已导入「{title}」",
+  "canvas.example.error.http": "下载失败（HTTP {status}），请稍后重试或手动导入。",
+  "canvas.example.error.network": "网络中断，请重试。",
+  "canvas.example.error.html": "服务器返回的是网页而不是画布文件，可能被拦截。",
+  "canvas.example.error.notArchive": "下载到的不是 ZIP 画布包，可能被拦截或已损坏。",
+  "canvas.example.error.ambiguous": "压缩包里没有唯一的 .canvas 画布文件。",
+  "canvas.example.error.notCanvas": "该文件不是 OpenDirector 画布。",
+  "canvas.example.error.tooLarge": "文件超过大小上限，已中止。",
+  "canvas.example.error.integrity": "文件校验不一致，已丢弃。",
+  "canvas.example.error.invalidUrl": "该示例的地址不受信任，已阻止下载。",
+  "canvas.example.error.aborted": "已取消下载。",
+  "canvas.example.error.unknown": "导入失败，请重试或手动导入。",
+  "canvas.example.manual.steps": "下载后把 .canvas 文件拖入画布，或使用「导入画布」。",
+  "canvas.example.manual.share": "打开分享链接（提取码 {code}）",
+  // The download reports live progress; sizes render as plain data.
+  "canvas.example.state.downloadingPercent": "正在下载… {percent}%",
+  "canvas.example.progress.label": "下载进度",
+  // The empty canvas imports the two hosted samples directly.
+  "canvas.workspace.empty.tryImage": "体验图片示例",
+  "canvas.workspace.empty.tryVideo": "体验视频示例",
 } as const;

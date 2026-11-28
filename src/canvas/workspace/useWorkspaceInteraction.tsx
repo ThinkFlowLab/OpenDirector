@@ -1,5 +1,5 @@
 import { type Connection, type Edge, type NodeChange, type OnConnectEnd } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { errorMessage } from "../../backend/api.ts";
 
 import { CanvasContextMenu } from "../CanvasContextMenu";
@@ -30,7 +30,7 @@ import { nodeKindKeys } from "./workspaceChrome.tsx";
 import type { FlowNode } from "./workspaceChrome.tsx";
 
 
-export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
+export function useWorkspaceInteraction(rt: WorkspaceRuntime, readOnly: boolean) {
   const {
     actionNode,
     activeAction,
@@ -128,6 +128,9 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     zoom,
   } = rt;
 
+  const textSelections = useRef<import("../TextNodeEditor").TextSelections>(new Map());
+  useEffect(() => { textSelections.current.clear(); }, [doc.id]);
+
   const clearGuides = useCallback(() => {
     flowSurface.current?.clearGuides();
   }, []);
@@ -148,10 +151,11 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     pointerGesture.current.cancel();
     flowSurface.current?.cancel();
     connectionStarted.current = null;
+    if (dragging.current) end();
     dragging.current = false;
     setInteracting(false);
     clearGuides();
-  }, [clearGuides]);
+  }, [clearGuides, end]);
   useEffect(() => {
     const move = (event: PointerEvent) =>
       pointerGesture.current.move(
@@ -628,6 +632,10 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     if (bounds) selectionPresentation.reveal(bounds);
   };
   useCanvasWheelBoundary(root, selectionPresentation.userNavigation);
+  const managedRunIds = useMemo(
+    () => new Set(doc.nodes.filter((node) => node.autoLayout === "run").map((node) => node.id)),
+    [doc.nodes],
+  );
   const flowNodes: FlowNode[] = useMemo(
     () =>
       orderNodesForCanvas(doc.nodes).map((n) => ({
@@ -635,14 +643,26 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
         measured: measurements[n.id],
         selected: selected.includes(n.id),
         draggable:
-          !lockedIds.has(n.id) &&
+          !readOnly && !lockedIds.has(n.id) &&
+          !n.autoLayout &&
+          !(n.parentId && managedRunIds.has(n.parentId)) &&
           !spacePressed &&
           activeAction?.nodeId !== n.id,
         connectable:
-          !lockedIds.has(n.id) &&
+          !readOnly && !lockedIds.has(n.id) &&
           !spacePressed &&
           activeAction?.nodeId !== n.id,
-        style: { width: n.width, height: n.height },
+        style: {
+          width: n.width,
+          height: n.height,
+          // A colored group tints its fill and border (#rrggbb plus alpha).
+          ...(n.type === "group" && n.color
+            ? {
+                "--cw-group-fill": `${n.color}24`,
+                "--cw-group-border": `${n.color}b3`,
+              }
+            : {}),
+        } as CSSProperties,
         zIndex: n.type === "group" ? -1 : n.zIndex,
         ariaLabel: t("canvas.workspace.aria.nodeLabel", {
           kind: t(nodeKindKeys[n.type]),
@@ -651,16 +671,29 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       })),
     [
       doc.nodes,
+      readOnly,
       selected,
       spacePressed,
       measurements,
       lockedIds,
+      managedRunIds,
       activeAction?.nodeId,
     ],
   );
-  const flowEdges: Edge[] = useMemo(
-    () =>
-      [...doc.edges, ...toolProvenanceEdges(jobs, doc)]
+  const flowEdges: Edge[] = useMemo(() => {
+    const draft = actionNode?.data.taskDraft;
+    const maskId = activeAction?.tool === "video-mask-composite" &&
+      draft?.tool === "video-mask-composite" ? draft.sourceNodeIds[1] : undefined;
+    const maskDraftEdge = maskId && actionNode &&
+      !doc.edges.some((edge) => edge.source === maskId && edge.target === actionNode.id)
+      ? {
+          id: `tool-mask-draft:${actionNode.id}`,
+          source: maskId,
+          target: actionNode.id,
+          intent: "post_edit_result" as const,
+        }
+      : undefined;
+    return [...doc.edges, ...toolProvenanceEdges(jobs, doc), ...(maskDraftEdge ? [maskDraftEdge] : [])]
         .filter(
           (edge) =>
             doc.nodes.some((node) => node.id === edge.source) &&
@@ -672,8 +705,11 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
           selected: selectedEdges.includes(e.id),
           hidden: !showEdges,
           selectable: !e.id.startsWith("tool-"),
+          deletable: e.intent !== "post_edit_result",
           data: {
-            ...referencePresentation(doc, e),
+            ...(e === maskDraftEdge
+              ? { state: "pending", description: t("tools.videoEditor.composite.mask") }
+              : referencePresentation(doc, e)),
             sourceBounds: (() => {
               const n = doc.nodes.find((n) => n.id === e.source)!;
               return {
@@ -698,9 +734,8 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
               ),
           },
           ariaLabel: t("canvas.workspace.aria.referenceEdge"),
-        })),
-    [doc.edges, doc.nodes, jobs, selectedEdges, showEdges],
-  );
+        }));
+  }, [activeAction?.tool, actionNode, doc.edges, doc.nodes, jobs, selectedEdges, showEdges, t]);
 
   const projected = useMemo(() => {
     const projection = projectCanvasStacks(flowNodes, flowEdges);
@@ -748,10 +783,11 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
   };
 
   const onWorkspaceKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const el = event.target as HTMLElement;
+    if (el.closest("dialog[open]")) return;
     bypassSnapping.current = event.metaKey || event.ctrlKey;
     if (bypassSnapping.current) clearGuides();
-    if (!ready || switchPending.current) return;
-    const el = event.target as HTMLElement;
+    if (!ready || switchPending.current || event.nativeEvent.isComposing) return;
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
     // Tool shortcuts also work when a canvas menu owns focus, while editors
@@ -780,7 +816,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
-        ".cw-composer-dock,.cw-composer-popover,.cw-text-window-backdrop,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-context-menu,.cw-node-title-input,.cw-subject-description",
+        ".od-desktop-navigation,.cw-composer-dock,.cw-composer-popover,.cw-text-window-backdrop,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-context-menu,.cw-node-title-input,.cw-subject-description",
       )
     )
       return;
@@ -922,7 +958,8 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
   );
 
   const actions = {
-    resizeSubjectDescription,
+    readOnly,
+    resizeSubjectDescription: readOnly ? undefined : resizeSubjectDescription,
     removeReference: (id: string) => {
       if (id.startsWith("tool-")) return;
       root.current?.focus({ preventScroll: true });
@@ -945,7 +982,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       source: "file" | "canvas" | "assets" | "import",
       slot?: SubjectMediaSlot,
     ) => {
-      if (lockedIds.has(id)) return;
+      if (readOnly || lockedIds.has(id)) return;
       if (source === "file") {
         openFilePicker(id, slot ?? "main");
         return;
@@ -1031,6 +1068,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       setRename(null);
     },
     rename: (id: string) => {
+      if (readOnly) return;
       const n = doc.nodes.find((n) => n.id === id);
       if (lockedIds.has(id)) notify(t("canvas.workspace.toast.unlockFirst"));
       else if (n) setRename({ id, value: n.data.title });
@@ -1039,6 +1077,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     versionsOpen: (id: string) => versionHistory?.itemId === id,
     showVersions: (id: string, anchor: DOMRect) => {
       const preparation = (async () => {
+        if (readOnly) return;
         // Let focused text fields commit their blur before flushing the canvas.
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => resolve()),
@@ -1059,12 +1098,13 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       void preparation.catch(() => {});
       setVersionHistory({ projectId: doc.id, itemId: id, anchor, preparation });
     },
-    upload: (id: string) => openFilePicker(id),
+    upload: (id: string) => { if (!readOnly) openFilePicker(id); },
     preview: (id: string) => {
       const node = doc.nodes.find((node) => node.id === id);
       if (node) setPreview(node);
     },
     newConnected: (id: string, direction: "source" | "target") => {
+      if (readOnly) return;
       const n = doc.nodes.find((n) => n.id === id);
       if (
         !n ||
@@ -1086,6 +1126,7 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
       });
     },
     contextMenu: (id: string, event: React.MouseEvent) => {
+      if (readOnly) return;
       event.preventDefault();
       event.stopPropagation();
       if (
@@ -1178,7 +1219,16 @@ export function useWorkspaceInteraction(rt: WorkspaceRuntime) {
     },
     beginEdit: begin,
     endEdit: end,
-    isTextEditing: (id: string) => textEditingId === id,
+    beginResize: () => {
+      beginDrag();
+      begin();
+    },
+    endResize: () => {
+      endDrag();
+      end();
+    },
+    textSelections: textSelections.current,
+    isTextEditing: (id: string) => !readOnly && textEditingId === id && !rt.textWindowId,
     finishTextEdit: () => {
       // Autosave is suspended while the transaction is open, so the finished
       // edit is written here instead of on a timer.

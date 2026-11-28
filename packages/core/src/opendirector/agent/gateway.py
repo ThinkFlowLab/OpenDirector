@@ -1,5 +1,6 @@
 """One turn's tool admission, replay and receipts, independent of transport."""
 import asyncio
+from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
 import json
@@ -19,9 +20,38 @@ class ToolResult:
     error: str | None = None
 
     def event(self, name: str) -> AgentEvent:
+        code = self.value.get('code') if isinstance(self.value, dict) else None
+        if code is None and isinstance(self.value, dict):
+            issues = self.value.get('issues')
+            if issues is None and isinstance(self.value.get('receipt'), dict):
+                issues = self.value['receipt'].get('issues')
+            if isinstance(issues, list) and len(issues) == 1 and isinstance(issues[0], dict):
+                code = issues[0].get('code')
         return {'type': 'tool', 'name': name,
                 'status': 'failed' if self.error else 'complete',
-                **({'error': self.error} if self.error else {})}
+                **({'error': self.error} if self.error else {}),
+                **({'code': code} if self.error and isinstance(code, str) else {})}
+
+
+# Reads are answered from immutable snapshots, so a wait cannot block unrelated
+# work; writes still hold the turn's single execution slot.
+READ_ONLY_QUERIES = frozenset({'job.status', 'job.get', 'object.get', 'canvas.status'})
+# Queries that wait for a business state. Closing a turn cancels them; a read
+# that has not been answered is worth nothing once the turn is over.
+WAITING_QUERIES = frozenset({'job.status', 'canvas.status'})
+
+
+def _read_only(name, arguments) -> bool:
+    """Whether this call may skip the execution lock.
+
+    Arguments are validated inside the call itself, so an argument shape that
+    is not a mapping or whose type is not a string is simply not read-only.
+    Raising here would leave the tool result contract.
+    """
+    if name != 'query' or not isinstance(arguments, dict):
+        return False
+    kind = arguments.get('type')
+    return isinstance(kind, str) and kind in READ_ONLY_QUERIES
 
 
 class ToolGateway:
@@ -54,7 +84,7 @@ class ToolGateway:
         return await asyncio.shield(task)
 
     async def execute(self, call_id: str, name: str, arguments: dict[str, JsonValue]) -> ToolResult:
-        async with self.execution_lock:
+        async with (nullcontext() if _read_only(name, arguments) else self.execution_lock):
             try:
                 if self.closed:
                     raise ProjectError('本轮工具入口已关闭。', 409)
@@ -67,7 +97,8 @@ class ToolGateway:
                 value = await self.business.execute(self.run.project_id, self.run.turn_id, self.run.session,
                     call_id, name, arguments, self.roots, self.run.config,
                     self.run.runtime if self.run.config is None else None,
-                    self.execution_directory)
+                    self.execution_directory, **({'runtime_model': self.run.runtime_model, 'thinking': self.run.thinking}
+                        if name == 'prompt_optimize' else {}))
                 if name == 'read_project':
                     value['modelSelections'] = dict(self.model_selections)
                 error = None
@@ -88,15 +119,15 @@ class ToolGateway:
                 error = '; '.join(messages)
                 return ToolResult(value={'error': error}, error=error)
             except (ProjectError, ValueError, KeyError, OSError, UnicodeError) as failure:
-                value = {'error': str(failure)}
+                details = {'error': str(failure)}
                 if isinstance(failure, ProjectError):
-                    value['code'] = failure.code
-                return ToolResult(value=value, error=str(failure))
+                    details['code'] = failure.code
+                return ToolResult(value=details, error=str(failure))
 
     async def close(self) -> None:
         self.closed = True
         for identity, task in self.calls.values():
             name, arguments = json.loads(identity)
-            if name == 'query' and arguments.get('type') == 'canvas.status':
+            if name == 'query' and isinstance(arguments, dict) and arguments.get('type') in WAITING_QUERIES:
                 task.cancel()
         await asyncio.gather(*(task for _, task in self.calls.values()), return_exceptions=True)

@@ -3,6 +3,7 @@ import type { GenerationFailure } from "../contracts/generated.ts";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
+import { capabilityErrorText } from "./capabilityErrorText.ts";
 
 /**
  * The backend stores Chinese diagnostics in the job record. Known messages map
@@ -10,13 +11,16 @@ import { defaultTranslate } from "./assistantTranslate.ts";
  * messages without ever showing Chinese in the English interface.
  */
 const BY_MESSAGE: Record<string, MessageKey> = {
+  "原请求的 Higgsfield API Key ID 已变化，请恢复原连接后再恢复任务。": "errors.generationFailure.higgsfieldAccount",
   "供应商判定提示词或参考图片违反内容政策，已拒绝生成。": "errors.generationFailure.policy",
   "生成服务拒绝了输入内容或参数。": "errors.generationFailure.input",
+  "所选音色不存在或不可用。": "errors.generationFailure.voiceNotFound",
   "生成服务拒绝了参考素材。": "errors.generationFailure.reference",
   "生成服务鉴权失败。": "errors.generationFailure.authentication",
   "当前账户没有调用该模型的权限。": "errors.generationFailure.permission",
   "模型账户余额或套餐额度不足。": "errors.generationFailure.quota",
   "模型调用频率或配额受限。": "errors.generationFailure.rateLimit",
+  "模型服务繁忙或请求受限。": "errors.generationFailure.rateLimit",
   "生成服务暂时不可用。": "errors.generationFailure.temporary",
   "生成服务未能完成当前操作。": "errors.generationFailure.provider",
   "音频参考不能单独使用，请搭配参考图片。":
@@ -34,6 +38,8 @@ const BY_MESSAGE: Record<string, MessageKey> = {
   "供应商未找到该任务。": "errors.generationFailure.notFoundTask",
   "生成接口或模型不存在。": "errors.generationFailure.notFoundEndpoint",
   "生成结果下载失败。": "errors.generationFailure.download",
+  "生成结果地址解析为非公网地址，下载已停止。": "errors.generationFailure.downloadAddress",
+  "生成结果地址无效或指向非公网地址，下载已停止。": "errors.generationFailure.downloadAddress",
   "生成服务任务已失败。": "errors.generationFailure.failed",
   "生成请求的提交结果不明。": "errors.generationFailure.submissionUnknown",
   "生成服务连接超时或中断。": "errors.generationFailure.temporary",
@@ -59,6 +65,8 @@ export function generationFailureMessage(
   failure: GenerationFailure,
   t: Translate = defaultTranslate,
 ): string {
+  const capability = capabilityErrorText(failure.message, t);
+  if (capability) return capability;
   if (failure.providerCode === "voice_not_found")
     return t("errors.generationFailure.voiceNotFound");
   const exact = BY_MESSAGE[failure.message];

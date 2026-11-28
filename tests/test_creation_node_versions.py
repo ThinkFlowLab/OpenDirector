@@ -13,6 +13,9 @@ from test_creation_canvas_service import project, media, send, text_material, ve
 from test_creation_generation_service import Provider, runtime, configure, anyio_backend
 
 
+pytestmark = pytest.mark.cpu
+
+
 def versions(snapshot):
     return [ver(kind, obj) for (kind, _), obj in object_index(snapshot).items()]
 
@@ -339,6 +342,26 @@ async def test_follow_history_next_execution_uses_current_source_and_keeps_old_e
         assert not current_references_differ(store.snapshot(pid), latest.inputSnapshot)
     finally:
         await runner.close()
+
+
+def test_listing_scans_shared_records_without_copying_or_exposing_them(project, monkeypatch):
+    store, pid, session = project
+    node, first = text_material(project)
+    assert send(store, pid, 'asset.writeText', session=session, versions=versions(store.snapshot(pid)),
+        name='second.md', text='second', previousAsset=asset_ref(first)).status == 'applied'
+    second = store.snapshot(pid).assets[-1]
+    assert send(store, pid, 'canvas.materialize', session=session, versions=versions(store.snapshot(pid)),
+        itemId=node.id, asset=asset_ref(second)).status == 'applied'
+    before = [record.model_dump_json() for record in store.records(pid)]
+    # history() deep-copies every commit; long projects took seconds per dialog open.
+    monkeypatch.setattr(store, 'history', lambda *args: pytest.fail('listing must not copy every commit'))
+    listing = CreationHistory(store).node_versions(pid, node.id)
+    assert {row['asset'].id for row in listing['versions']} == {first.id, second.id}
+    shared = store.records(pid)[0].snapshot
+    shared_objects = {id(asset) for asset in shared.assets} | {id(item) for item in shared.canvasItems}
+    assert id(listing['item']) not in shared_objects
+    assert not {id(row['asset']) for row in listing['versions']} & shared_objects
+    assert [record.model_dump_json() for record in store.records(pid)] == before
 
 
 def test_listing_and_counts_load_history_once_and_recheck_changed_files(project, monkeypatch):

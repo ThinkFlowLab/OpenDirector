@@ -12,25 +12,35 @@ from filelock import Timeout
 from opendirector.installation import data_root, web_root
 from opendirector.wiring import configure_runtime
 from opendirector.domain.projects import ProjectError, identifier
+from opendirector.domain.capability_messages import MissingToolModelError
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.settings import GeneralSettings, GeneralSettingsPatch
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.model_catalog import ModelCatalog
+from opendirector.application.model_availability import ModelAvailability
 from opendirector.application.preferences import Preferences
+from opendirector.application.prompt_optimization import PromptOptimization
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.application.creation_tool_assets import CreationToolAssets
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.chat_completions import ChatCompletions
-from opendirector_api.creation import creation_routes
+from opendirector_api.creation import creation_routes, preview_until_disconnect
 from opendirector_api.agent import agent_routes
 from opendirector_api.library import library_routes
 from opendirector_api.voices import voice_routes
+from opendirector_api.examples import router as example_routes
 from opendirector_api.localization import localized_error
 from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentModelTest,
     ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput,
-    ToolTaskCreate, ToolPlacement, ImageSelectionCreate)
+    ToolTaskCreate, ToolPlacement, ImageSelectionCreate, AvailabilityRefresh, AvailabilityCatalog,
+    ModelAvailability as ModelAvailabilityResponse)
+
+
+async def _cli_prompt_rewrite(runtime, model, thinking, messages):
+    from opendirector.agent import prompt_rewrite
+    return await prompt_rewrite.rewrite(runtime, model, thinking, messages)
 
 
 def video_capabilities(value):
@@ -41,7 +51,7 @@ def model_options(value: ModelBatchInput):
     return {key: item.model_dump(exclude_unset=True) for key, item in value.modelOptions.items()}
 
 
-def create_app(store: LocalProjects | None = None, chat_provider=None, generation_provider=None) -> FastAPI:
+def create_app(store: LocalProjects | None = None, chat_provider=None, generation_provider=None, capability_probe=None) -> FastAPI:
     configure_runtime()
     repository = data_root()
     if store is None:
@@ -49,9 +59,12 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     model_configs = ModelConfigs(store.repository)
     preferences = Preferences(store.repository)
     creation_projects = CreationProjects(store)
-    creation_generation = CreationGeneration(creation_projects, model_configs, generation_provider)
-    creation_tools = ToolTasks(store, model_configs, CreationToolAssets(creation_projects), projects=creation_projects)
-    catalog = ModelCatalog(model_configs, chat_provider or ChatCompletions())
+    availability = ModelAvailability(model_configs, capability_probe)
+    creation_generation = CreationGeneration(creation_projects, model_configs, generation_provider, availability=availability)
+    creation_tools = ToolTasks(store, model_configs, CreationToolAssets(creation_projects), projects=creation_projects, availability=availability)
+    catalog = ModelCatalog(model_configs, chat_provider or ChatCompletions(), availability)
+
+    active_agents = {}
 
     @asynccontextmanager
     async def lifespan(app):
@@ -60,16 +73,28 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
             await creation_tools.start()
             yield
         finally:
+            agents = [entry.task for entry in list(active_agents.values()) if entry.task is not None]
+            for agent in agents:
+                agent.cancel()
+            await asyncio.gather(*agents, return_exceptions=True)
             try:
                 await creation_tools.close()
             finally:
                 await creation_generation.close()
+                availability.probe.close()
 
-    app = FastAPI(title="OpenDirector Local API", version="0.1.2", lifespan=lifespan)
-    app.include_router(creation_routes(creation_projects, creation_generation))
-    app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider))
+    app = FastAPI(title="OpenDirector Local API", version="0.1.6", lifespan=lifespan)
+    app.include_router(creation_routes(creation_projects, creation_generation,
+        PromptOptimization(creation_projects, model_configs, chat_provider or ChatCompletions(),
+            cli_rewrite=_cli_prompt_rewrite)))
+    app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider, active=active_agents))
     app.include_router(library_routes(creation_projects))
     app.include_router(voice_routes(creation_generation.voices))
+    app.include_router(example_routes)
+    app.state.desktop_activity = lambda: dict(
+        agents=len(active_agents), generations=sum(not job.future.done() for job in creation_generation.jobs.values()),
+        tools=sum(not job.done() for job in creation_tools.jobs.values()))
+
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
@@ -87,6 +112,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.exception_handler(ProjectError)
     async def project_error(request, error):
+        required_capability = error.capability if isinstance(error, MissingToolModelError) else None
         return JSONResponse(
             {
                 "detail": localized_error(
@@ -94,8 +120,10 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                     chinese=str(error),
                     status=error.status,
                     code=error.code,
+                    required_capability=required_capability,
                 ),
                 "code": error.code,
+                **({'requiredCapability': required_capability} if required_capability else {}),
             },
             status_code=error.status,
         )
@@ -192,6 +220,21 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     def list_model_configs():
         return catalog.list()
 
+    @app.get('/api/model-configs/availability', response_model=AvailabilityCatalog)
+    def model_availability():
+        return availability.list()
+
+    @app.post('/api/model-configs/availability', response_model=AvailabilityCatalog)
+    def refresh_model_availability(value: AvailabilityRefresh):
+        return availability.refresh([str(item) for item in value.configIds] if value.configIds is not None else None, manual=value.manual)
+
+    @app.post('/api/model-configs/availability/check', response_model=ModelAvailabilityResponse)
+    async def check_model_availability(value: ModelDiscoveryRequest):
+        return await catalog.check_availability(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(),
+            str(value.configId) if value.configId else None, connection_type=value.connectionType, protocol=value.protocol,
+            auth_mode=value.authMode, proxy_mode=value.proxyMode, video_adapter=value.videoAdapter,
+            capability_auto_check=value.capabilityAutoCheck)
+
     @app.get('/api/settings', response_model=GeneralSettings)
     def get_settings():
         return preferences.get()
@@ -211,7 +254,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                                  protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode, video_adapter=value.videoAdapter,
                                  video_capabilities=video_capabilities(value), input_modalities=value.inputModalities,
                                  model_options=model_options(value),
-                                 capabilities_supplied='videoCapabilities' in value.model_fields_set)
+                                 capabilities_supplied='videoCapabilities' in value.model_fields_set, capability_auto_check=value.capabilityAutoCheck)
 
     @app.post('/api/model-configs/discover')
     async def discover_models(value: ModelDiscoveryRequest):
@@ -224,14 +267,16 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     async def test_agent_model(value: AgentModelTest):
         elapsed = await catalog.test_agent(value.url, value.modelId, value.apiKey.get_secret_value(),
                                            str(value.configId) if value.configId else None, connection_type=value.connectionType,
-                                           protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode)
+                                           protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
+                                           capability_auto_check=value.capabilityAutoCheck)
         return {'elapsedMs': elapsed}
 
     @app.post("/api/model-configs", response_model=ModelConfigPublic)
     def create_model_config(value: ModelConfigInput):
         return catalog.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
                             video_adapter=value.videoAdapter, video_capabilities=video_capabilities(value),
-                            capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities)
+                            capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities,
+                            capability_auto_check=value.capabilityAutoCheck)
 
     @app.post('/api/model-configs/capabilities')
     async def model_capabilities(value: ModelCapabilityRequest):
@@ -245,7 +290,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     def update_model_config(config_id: UUID, value: ModelConfigInput):
         return catalog.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), str(config_id), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
                             video_adapter=value.videoAdapter, video_capabilities=video_capabilities(value),
-                            capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities)
+                            capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities,
+                            capability_auto_check=value.capabilityAutoCheck)
 
     @app.delete("/api/model-configs/{config_id}", status_code=204)
     def delete_model_config(config_id: UUID):
@@ -261,25 +307,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                                   x_opendirector_session: str = Header()):
             # Preview work has no durable task; disconnecting cancels the local
             # upstream request without disturbing accepted tool executions.
-            work = asyncio.create_task(service.selection_preview(str(project_id), value.model_dump(mode='json'),
-                                                               identifier(x_opendirector_session)))
-
-            async def disconnected():
-                # The body has been decoded by FastAPI. Wait on the remaining
-                # ASGI events: is_disconnected() uses a cancelled scope that can
-                # miss disconnects through BaseHTTPMiddleware's receive stream.
-                while (await request.receive())['type'] != 'http.disconnect':
-                    pass
-
-            disconnect = asyncio.create_task(disconnected())
-            try:
-                done, _ = await asyncio.wait((work, disconnect), return_when=asyncio.FIRST_COMPLETED)
-                return await work if work in done else Response(status_code=499)
-            finally:
-                for task in (work, disconnect):
-                    if not task.done():
-                        task.cancel()
-                await asyncio.gather(work, disconnect, return_exceptions=True)
+            return await preview_until_disconnect(request, service.selection_preview(
+                str(project_id), value.model_dump(mode='json'), identifier(x_opendirector_session)))
 
     register_selection_route(creation_tools, '/api/creation/projects/{project_id}/image-selections')
 

@@ -1,11 +1,14 @@
 /** React Flow is a projection. These adapters translate typed editor/media
  * values; no browser URL is ever put into the authoritative project. */
+import { dataUrlToBlob } from "../canvas/downloadAssets.ts";
 import type {
   Asset,
   AssetRef,
   CanvasItem,
   EditorDocument,
   EditorDocumentInput,
+  EditorInputConnection,
+  EditorInputConnectionInput,
   GenerationSpec,
   GenerationSpecInput,
   ObjectVersion,
@@ -30,7 +33,7 @@ import {
 } from "../canvas/stageDocument.ts";
 import { mediaBlobDataUrl } from "../canvas/localMediaRuntime.ts";
 import { generationContentPatch } from "../canvas/generationReferenceContent.ts";
-import { assemblyResource } from "../canvas/editorAssembly.ts";
+import { assemblyResource, staleAssembly } from "../canvas/editorAssembly.ts";
 import { RULE_FACTS } from "../contracts/ruleFacts.generated.ts";
 import { canvasReferenceRole, MUSIC_SECONDS } from "./rules.ts";
 import {
@@ -43,17 +46,39 @@ import {
   visibleItems,
   type CreationOperation,
 } from "./creationClient.ts";
+import { assetSource } from "./assetSource.ts";
 import { sameJsonValue } from "./sameJsonValue.ts";
+import {
+  classifyImportFile,
+  readEditorResource,
+} from "../canvas/editorMedia.ts";
 
 /** Every comparison here is over a document that carries its media inline, so
  * it reads the values instead of serializing both sides to compare strings. */
 const same = sameJsonValue;
+
+/** Retained links are compared field by field: the snapshot keeps the original
+ * relation, and the server skips a connection whose value did not change. */
+function sameConnection(
+  previous: EditorInputConnection,
+  next: EditorInputConnectionInput,
+) {
+  return (
+    previous.slotId === next.slotId &&
+    previous.sourceId === next.sourceId &&
+    previous.asset.assetId === next.asset.assetId &&
+    previous.asset.revision === next.asset.revision &&
+    previous.asset.fingerprint === next.asset.fingerprint &&
+    previous.asset.kind === next.asset.kind
+  );
+}
 const presentationFields = [
   "title",
   "width",
   "height",
   "zIndex",
   "locked",
+  "color",
   "parentId",
 ] as const;
 const extension: Record<string, string> = {
@@ -74,9 +99,24 @@ export class CreationProjection {
   private importHandles = new Map<string, string>();
   private timelineImportSources = new Map<string, string>();
   private masks = new Map<string, Promise<string>>();
+  private pendingSpecIds = new Map<string, string>();
   readonly client: CreationClient;
   constructor(client: CreationClient) {
     this.client = client;
+  }
+
+  async importFile(file: File, signal?: AbortSignal): Promise<CanvasResource> {
+    const { kind, mimeType } = classifyImportFile(file);
+    if (kind !== "video" && kind !== "audio" &&
+        mimeType !== "image/heic" && mimeType !== "image/heif")
+      return readEditorResource(file, signal);
+    signal?.throwIfAborted();
+    const ref = await this.client.importBlob(file, file.name, kind, undefined, undefined, signal);
+    signal?.throwIfAborted();
+    // The Host probes original bytes, so audio and video never need a data URL.
+    // Failed previews must not be saved as empty generation nodes.
+    await this.client.mediaUrl(ref.assetId, { signal });
+    return this.resource(ref);
   }
 
   async resource(ref: AssetRef, title?: string): Promise<CanvasResource> {
@@ -89,7 +129,7 @@ export class CreationProjection {
       byteSize: asset.metadata.size,
       kind: asset.kind as CanvasResource["kind"],
       title: title ?? asset.name,
-      src: await this.client.mediaUrl(asset.id).catch(() => undefined),
+      src: assetSource(this.client.id, asset.id),
       mimeType: asset.metadata.mimeType,
       width: asset.metadata.width ?? undefined,
       height: asset.metadata.height ?? undefined,
@@ -134,10 +174,15 @@ export class CreationProjection {
             resource.previous,
           );
         if (!resource.src) throw new Error(tNow("errors.backend.mediaEmpty"));
-        const response = await fetch(resource.src);
-        if (!response.ok)
-          throw new Error(tNow("errors.backend.mediaReadFailed"));
-        const blob = await response.blob();
+        let blob: Blob;
+        if (existing) blob = await this.client.blob(existing.id);
+        else if (/^data:/i.test(resource.src)) blob = dataUrlToBlob(resource.src);
+        else {
+          const response = await fetch(resource.src);
+          if (!response.ok)
+            throw new Error(tNow("errors.backend.mediaReadFailed"));
+          blob = await response.blob();
+        }
         const suffix = extension[blob.type] ?? blob.type.split("/")[1] ?? "bin";
         const name = /\.[\w]+$/.test(resource.title)
           ? resource.title
@@ -203,9 +248,7 @@ export class CreationProjection {
       title: title ?? asset?.name ?? ref.assetId,
       asset: { ...ref },
       mimeType: asset?.metadata.mimeType ?? "application/octet-stream",
-      src: asset
-        ? await this.client.mediaUrl(asset.id).catch(() => undefined)
-        : undefined,
+      src: asset ? assetSource(this.client.id, asset.id) : undefined,
     };
   }
 
@@ -354,7 +397,8 @@ export class CreationProjection {
               ? {
                   name: doc.data.palette.name ?? undefined,
                   sourceImageUri: doc.data.palette.sourceImage
-                    ? await this.client.mediaUrl(
+                    ? assetSource(
+                        this.client.id,
                         doc.data.palette.sourceImage.assetId,
                       )
                     : undefined,
@@ -390,7 +434,8 @@ export class CreationProjection {
                         kind: "image" as const,
                         width: layer.content.width,
                         height: layer.content.height,
-                        src: await this.client.mediaUrl(
+                        src: assetSource(
+                          this.client.id,
                           layer.content.asset.assetId,
                         ),
                       }
@@ -402,7 +447,7 @@ export class CreationProjection {
       case "image_crop":
         return {
           imageCrop: {
-            src: await this.client.mediaUrl(doc.data.source.assetId),
+            src: assetSource(this.client.id, doc.data.source.assetId),
             options: doc.data.options,
             width: doc.data.width,
             height: doc.data.height,
@@ -524,6 +569,32 @@ export class CreationProjection {
     };
   }
 
+  /** Media availability is a read result, so it updates a view without an edit. */
+  withMediaAvailability(document: CanvasDocument): CanvasDocument {
+    const update = (nodes: CanvasNode[]) => {
+      let changed = false;
+      const next = nodes.map((node) => {
+        if (
+          !node.data.backendAssetId ||
+          !["image", "video", "audio"].includes(node.type)
+        )
+          return node;
+        const assetState = this.client.mediaUnavailable(node.data.backendAssetId)
+          ? ("missing" as const)
+          : ("ready" as const);
+        if (node.data.assetState === assetState) return node;
+        changed = true;
+        return { ...node, data: { ...node.data, assetState } };
+      });
+      return changed ? next : nodes;
+    };
+    const nodes = update(document.nodes);
+    const hiddenNodes = document.hiddenNodes && update(document.hiddenNodes);
+    return nodes === document.nodes && hiddenNodes === document.hiddenNodes
+      ? document
+      : { ...document, nodes, ...(hiddenNodes ? { hiddenNodes } : {}) };
+  }
+
   private rememberProjection(
     snapshot: ProjectSnapshot,
     document: CanvasDocument,
@@ -544,6 +615,7 @@ export class CreationProjection {
     const document = {
       ...createDocument(snapshot.project.name),
       id: snapshot.project.id,
+      defaultNameIndex: snapshot.project.defaultNameIndex,
     };
     const view = await this.client.view();
     document.viewport = view.viewport;
@@ -562,6 +634,8 @@ export class CreationProjection {
           width: item.width,
           height: item.height,
           locked: item.locked,
+          ...(item.color ? { color: item.color } : {}),
+          ...(item.kind === "group" && item.autoLayout ? { autoLayout: item.autoLayout } : {}),
           zIndex: item.zIndex,
           parentId: item.parentId ?? undefined,
         };
@@ -574,8 +648,10 @@ export class CreationProjection {
           try {
             if (asset.kind === "text")
               node.data.text = await this.client.textContent(asset.id);
-            else node.data.src = await this.client.mediaUrl(asset.id);
-            node.data.assetState = "ready";
+            else node.data.src = assetSource(snapshot.project.id, asset.id);
+            node.data.assetState = this.client.mediaUnavailable(asset.id)
+              ? "missing"
+              : "ready";
           } catch {
             node.data.assetState = "missing";
           }
@@ -728,6 +804,8 @@ export class CreationProjection {
                         ? "auto"
                         : spec.parameters.size,
                     imagePreset: spec.parameters.preset,
+                    faceEmphasis: spec.parameters.faceEmphasis === true,
+                    imageQuality: spec.parameters.quality ?? "auto",
                   }
                 : {}),
               ...(spec.kind === "video"
@@ -864,7 +942,20 @@ export class CreationProjection {
     }
     for (const item of snapshot.canvasItems) {
       const asset = currentAsset(snapshot, item);
-      const sourceId = asset?.provenance.sourceItemId;
+      const timelineSources =
+        asset?.provenance.source === "rendered" &&
+        asset.provenance.editorDocumentId
+          ? snapshot.canvasItems.filter(
+              (source) =>
+                source.kind === "timeline" &&
+                source.binding.role === "editor" &&
+                source.binding.objectRef.id ===
+                  asset.provenance.editorDocumentId,
+            )
+          : [];
+      const sourceId =
+        asset?.provenance.sourceItemId ??
+        (timelineSources.length === 1 ? timelineSources[0].id : undefined);
       if (sourceId && snapshot.canvasItems.some((i) => i.id === sourceId))
         document.edges.push({
           id: `publication:${item.id}:${asset!.id}`,
@@ -872,6 +963,23 @@ export class CreationProjection {
           target: item.id,
           intent: "post_edit_result",
         });
+      const editor = asset?.provenance.editorDocumentId &&
+        snapshot.editorDocuments.find((doc) => doc.id === asset.provenance.editorDocumentId);
+      if (
+        asset && editor && editor.kind === "media_edit" &&
+        editor.data.tool === "video-mask-composite" &&
+        editor.revision === asset.provenance.editorRevision
+      ) {
+        const maskId = editor.data.sourceItems[1];
+        if (maskId && maskId !== sourceId && maskId !== item.id &&
+            snapshot.canvasItems.some((source) => source.id === maskId))
+          document.edges.push({
+            id: `publication:${item.id}:${asset.id}:${maskId}`,
+            source: maskId,
+            target: item.id,
+            intent: "post_edit_result",
+          });
+      }
     }
     document.hiddenNodes = document.nodes.filter(
       (node) => !visible.has(node.id),
@@ -890,8 +998,11 @@ export class CreationProjection {
     node: CanvasNode,
     current?: GenerationSpec,
   ): GenerationSpecInput {
+    const id = current?.id ?? this.pendingSpecIds.get(node.id) ?? crypto.randomUUID();
+    // Preserve the batch payload when an unacknowledged draft save is retried.
+    if (!current) this.pendingSpecIds.set(node.id, id);
     const common = {
-      id: current?.id ?? crypto.randomUUID(),
+      id,
       projectId: this.client.id,
       revision: current?.revision ?? 1,
       purpose: current?.purpose ?? "draft",
@@ -934,6 +1045,13 @@ export class CreationProjection {
                 ? null
                 : node.data.settings.aspectRatio,
             preset: node.data.settings?.imagePreset ?? "none",
+            ...(node.data.settings?.faceEmphasis
+              ? { faceEmphasis: true }
+              : {}),
+            ...(node.data.settings?.imageQuality &&
+            node.data.settings.imageQuality !== "auto"
+              ? { quality: node.data.settings.imageQuality }
+              : {}),
             responseFormat: "url",
             outputFormat: "png",
           },
@@ -996,32 +1114,41 @@ export class CreationProjection {
     edges: CanvasDocument["edges"] = [],
     nodes: readonly CanvasNode[] = [],
   ): Promise<EditorDocumentInput> {
+    // A link the domain already recorded is retained: the source may have moved
+    // on since, and the snapshot deliberately keeps the original relation.
+    const retained = new Map(
+      (current?.inputConnections ?? []).map((value) => [value.id, value]),
+    );
+    const inputConnections: EditorInputConnectionInput[] = [];
+    for (const edge of edges) {
+      if (edge.target !== node.id || edge.intent !== "assembly_input") continue;
+      const resource = assemblyResource(node, edge.assemblySlotId);
+      if (!resource) throw new Error(tNow("errors.backend.assemblyMissing"));
+      const asset = await this.importResource(resource);
+      const connection = {
+        id: edge.id,
+        sourceId: edge.source,
+        asset,
+        slotId:
+          node.type === "subject" && edge.assemblySlotId !== "main"
+            ? asset.assetId
+            : edge.assemblySlotId!,
+      };
+      const previous = retained.get(edge.id);
+      if (!(previous && sameConnection(previous, connection))) {
+        // Fresh links must name the source's current media. An archive can hold
+        // one that does not, because the clip kept the media it was assembled
+        // with; the clip is still valid on its own, so only the link is dropped.
+        const source = nodes.find((item) => item.id === edge.source);
+        if (staleAssembly(source, resource)) continue;
+      }
+      inputConnections.push(connection);
+    }
     const common = {
       id: current?.id ?? crypto.randomUUID(),
       projectId: this.client.id,
       revision: current?.revision ?? 1,
-      inputConnections: await Promise.all(
-        edges
-          .filter(
-            (edge) =>
-              edge.target === node.id && edge.intent === "assembly_input",
-          )
-          .map(async (edge) => {
-            const resource = assemblyResource(node, edge.assemblySlotId);
-            if (!resource)
-              throw new Error(tNow("errors.backend.assemblyMissing"));
-            const asset = await this.importResource(resource);
-            return {
-              id: edge.id,
-              sourceId: edge.source,
-              asset,
-              slotId:
-                node.type === "subject" && edge.assemblySlotId !== "main"
-                  ? asset.assetId
-                  : edge.assemblySlotId!,
-            };
-          }),
-      ),
+      inputConnections,
     };
     const ref = (resource: CanvasResource) => this.importResource(resource);
     switch (kind) {
@@ -1325,7 +1452,14 @@ export class CreationProjection {
             ? node.data.text !== undefined &&
               node.data.text !== old?.data.text &&
               (!!node.data.text || !!old?.data.text)
-            : !!node.data.src && node.data.src !== old?.data.src;
+            : !!node.data.src &&
+              node.data.src !== old?.data.src &&
+              // The same saved asset can arrive through another of its URLs.
+              !(
+                item &&
+                this.client.assetForSource(node.data.src)?.id ===
+                  currentAsset(basis, item)?.id
+              );
         if (materialChanged) {
           const previous =
             item && node.type === "text"
@@ -1486,6 +1620,7 @@ export class CreationProjection {
           kind as EditorDocument["kind"],
           current,
           document.edges,
+          [...document.nodes, ...(document.hiddenNodes ?? [])],
         );
         if (!current)
           operations.push({
@@ -1498,6 +1633,7 @@ export class CreationProjection {
             kind as EditorDocument["kind"],
             current,
             this.baseline.edges,
+            [...this.baseline.nodes, ...(this.baseline.hiddenNodes ?? [])],
           );
           if (!same(doc, previous)) {
             expect("editor_document", current);
@@ -1535,6 +1671,8 @@ export class CreationProjection {
               height: node.height,
               zIndex: node.zIndex ?? 0,
               locked: node.locked ?? false,
+              ...(node.color ? { color: node.color } : {}),
+              ...(node.type === "group" && node.autoLayout ? { autoLayout: node.autoLayout } : {}),
               parentId: node.parentId ?? null,
               binding,
             } as CanvasItem,
@@ -1554,6 +1692,7 @@ export class CreationProjection {
           height: node.height,
           zIndex: node.zIndex ?? 0,
           locked: node.locked ?? false,
+          color: node.color ?? "",
           parentId: node.parentId ?? null,
         };
         const oldPresentation = {
@@ -1562,6 +1701,7 @@ export class CreationProjection {
           height: old?.height,
           zIndex: old?.zIndex ?? 0,
           locked: old?.locked ?? false,
+          color: old?.color ?? "",
           parentId: old?.parentId ?? null,
         };
         const changedFields = presentationFields.filter(
@@ -2045,6 +2185,7 @@ export class CreationProjection {
     // Business acknowledgement cannot be undone by a view preference failure.
     this.basis = this.client.snapshot;
     this.baseline = document;
+    this.pendingSpecIds.clear();
     if (options.saveView === false) return operations.length > 0;
     await this.saveView(document);
     return operations.length > 0;

@@ -1,5 +1,6 @@
-"""Chat Completions streaming, including DeepSeek's thinking parameters."""
+"""Chat Completions streaming, including provider-specific thinking parameters."""
 
+from base64 import b64encode
 import json
 from urllib.parse import urlsplit
 
@@ -11,11 +12,42 @@ from opendirector.domain.projects import ProjectError
 from opendirector.integrations.generation_errors import checked, provider_failure, transport_failure
 
 
+CHAT_MAX_TOKENS = 8192
+
+
+def model_studio(config: dict) -> bool:
+    host = urlsplit(config["url"]).hostname or ""
+    return host.endswith((".aliyuncs.com", ".alibabacloud.com")) and (
+        host.startswith("dashscope") or ".maas." in host
+    )
+
+
+def chat_audio_input(config: dict, data: bytes, audio_format: str) -> dict:
+    encoded = b64encode(data).decode("ascii")
+    if model_studio(config):
+        mime = "audio/mpeg" if audio_format == "mp3" else "audio/wav"
+        encoded = f"data:{mime};base64,{encoded}"
+    return {"type": "input_audio", "input_audio": {"data": encoded, "format": audio_format}}
+
+
 def chat_payload(config: dict, messages: list[dict], thinking: str) -> dict:
-    value = {"model": config["modelId"], "messages": messages, "stream": True, "max_tokens": 8192}
+    value = {"model": config["modelId"], "messages": messages, "stream": True, "max_tokens": CHAT_MAX_TOKENS}
     thinking_map = {"auto": "high", "low": "low", "medium": "high", "high": "max"}
-    if urlsplit(config["url"]).hostname == "api.deepseek.com":
+    hostname = urlsplit(config["url"]).hostname
+    if model_studio(config) and "omni" in config["modelId"].casefold():
+        value["modalities"] = ["text"]
+    if hostname == "api.deepseek.com":
         value.update(thinking={"type": "enabled"}, reasoning_effort=thinking_map.get(thinking, thinking_map["auto"]))
+    elif hostname == "open.bigmodel.cn":
+        # GLM reasoning_effort accepts only low, high and max. Omit the parameter for
+        # auto so the provider default applies, and fall back to high for unknown levels.
+        if thinking != "auto":
+            value["reasoning_effort"] = thinking_map.get(thinking, thinking_map["auto"])
+    elif hostname == "api.atlascloud.ai":
+        # The gateway fronts many model families and some (Qwen) reject low and medium
+        # with a 400. Only high is accepted everywhere, so other levels use the model default.
+        if thinking == "high":
+            value["reasoning_effort"] = "high"
     elif thinking != "auto":
         value["reasoning_effort"] = thinking
     if len(json.dumps(value, ensure_ascii=False).encode()) > 48 * 1024 * 1024:

@@ -12,6 +12,9 @@ from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def project(tmp_path):
     store = CreationProjects(LocalProjects(tmp_path))
@@ -468,3 +471,159 @@ def test_material_show_uses_media_ratio_unless_size_authored(project, size, expl
     restored = next(item for item in reloaded.snapshot(pid).canvasItems if item.id == item_id)
     assert (restored.width, restored.height) == (saved.width, saved.height)
     assert restored.binding.objectRef == asset_ref(asset)
+
+
+def test_group_color_is_set_reset_and_validated(project):
+    store, pid, session = project
+    group_id = uuid4()
+    assert send(store, pid, 'canvas.show', session=session,
+        item=dict(id=group_id, projectId=pid, kind='group', color='#3e63dd')).status == 'applied'
+    group = store.snapshot(pid).canvasItems[-1]
+    assert group.color == '#3e63dd'
+    assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', group)],
+        itemId=group.id, color='#30a46c').status == 'applied'
+    group = store.snapshot(pid).canvasItems[-1]
+    assert group.color == '#30a46c'
+    # An empty color restores the default, which is omitted from the item.
+    assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', group)],
+        itemId=group.id, color='').status == 'applied'
+    group = store.snapshot(pid).canvasItems[-1]
+    assert group.color is None and 'color' not in group.model_dump(mode='json')
+    with pytest.raises(ValueError, match='color'):
+        send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', group)],
+            itemId=group.id, color='blue')
+
+
+def test_canvas_update_without_color_keeps_its_historical_fingerprint():
+    # Commands recorded before the color field existed must hash the same, or
+    # history validation rejects every project containing a canvas.update.
+    item_id = str(uuid4())
+    base = dict(commandId=str(uuid4()), projectId=str(uuid4()), type='canvas.update',
+        expectedVersions=[dict(objectType='canvas_item', id=item_id, revision=1)])
+    legacy = dict(itemId=item_id, title=None, width=None, height=336.0, zIndex=None, locked=None, parentId=None)
+    command = parse_command(dict(base, payload=legacy))
+    # The fingerprint hashes this dump, so it must equal the pre-color payload exactly.
+    assert command.model_dump(mode='json')['payload'] == legacy
+    assert parse_command(dict(base, payload=dict(legacy, color=''))).model_dump(mode='json')['payload']['color'] == ''
+
+
+def seed_jobs(project, count, statuses=('queued',)):
+    """Commit real job records without any provider call."""
+    from opendirector.domain.creation.generation import ImageGenerationSpec, InputSnapshot, Job
+    from opendirector.domain.creation.models import ModelSnapshot
+    from opendirector.domain.creation.project import ProjectSnapshot
+    store, pid, session = project
+    model_id, spec_id = uuid4(), uuid4()
+    spec = ImageGenerationSpec(id=spec_id, projectId=pid, kind='image', purpose='generation', modelConfigId=model_id, prompt='A mountain')
+    model = ModelSnapshot(modelConfigId=model_id, kind='image', modelId='demo', url='https://model.test/v1', protocol='openai', connectionType='api')
+    snapshot = InputSnapshot(spec=spec, model=model)
+    jobs = [Job(id=uuid4(), projectId=pid, inputSnapshot=snapshot, inputFingerprint=snapshot.fingerprint(),
+                execution=dict(kind='image', size='2K'), status=statuses[index % len(statuses)]) for index in range(count)]
+    seed = parse_command(dict(commandId=uuid4(), projectId=pid, type='generationSpec.create', expectedVersions=[], payload={'spec': spec}))
+
+    def transform(before):
+        data = before.model_dump()
+        data['generationSpecs'] = [spec]
+        data['jobs'] = jobs
+        return ProjectSnapshot.model_validate(data)
+    store.commit(seed, transform, session=session)
+    return jobs
+
+
+def test_job_status_answers_every_job_from_one_snapshot(project, monkeypatch):
+    store, pid, _ = project
+    jobs = seed_jobs(project, 12)
+    canvas = CreationCanvas(store)
+    reads = []
+    snapshot = store.snapshot
+
+    def counted(project_id):
+        reads.append(project_id)
+        return snapshot(project_id)
+    monkeypatch.setattr(store, 'snapshot', counted)
+    result = canvas.job_states(pid, tuple(job.id for job in jobs))
+    assert len(reads) == 1
+    assert len(result['jobs']) == 12
+    assert result['terminal'] is False
+    assert [job['status'] for job in result['jobs']] == ['queued'] * 12
+    assert len(canvas.job_states(pid)['jobs']) == 12
+    assert len(reads) == 2
+    from opendirector.domain.creation.validation import ContractError
+    with pytest.raises(ContractError) as error:
+        canvas.job_states(pid, (uuid4(),))
+    assert error.value.issue.code == 'missing_object'
+
+
+def test_job_status_omits_settled_jobs_and_reports_missing_ones(project):
+    store, pid, _ = project
+    jobs = seed_jobs(project, 3, statuses=('queued', 'cancelled'))
+    canvas = CreationCanvas(store)
+    assert [job['status'] for job in canvas.job_states(pid)['jobs']] == ['queued', 'queued']
+    settled = [job for job in jobs if job.status == 'cancelled']
+    assert canvas.job_states(pid, (settled[0].id,))['terminal'] is True
+
+
+def test_wait_jobs_returns_on_any_or_all_and_stops_at_the_timeout(project, monkeypatch):
+    import asyncio
+    store, pid, _ = project
+    jobs = seed_jobs(project, 2)
+    canvas = CreationCanvas(store)
+    windows = [{'jobs': [{'status': 'running'}, {'status': 'queued'}], 'terminal': False},
+               {'jobs': [{'status': 'succeeded'}, {'status': 'queued'}], 'terminal': False},
+               {'jobs': [{'status': 'succeeded'}, {'status': 'running'}], 'terminal': False}]
+    monkeypatch.setattr(canvas, 'job_states', lambda *args: windows[0])
+    assert asyncio.run(canvas.wait_jobs(pid, (), 0.01, 'all'))['terminal'] is False
+    calls = []
+
+    def sequence(*args):
+        calls.append(1)
+        return windows[min(len(calls) - 1, len(windows) - 1)]
+    monkeypatch.setattr(canvas, 'job_states', sequence)
+    any_result = asyncio.run(canvas.wait_jobs(pid, (), 5, 'any'))
+    assert any_result['jobs'][0]['status'] == 'succeeded'
+    assert len(calls) == 2
+
+
+def test_wait_jobs_holds_the_group_it_started_with(project, monkeypatch):
+    """A job that settles while we wait is still reported, with its failure."""
+    import asyncio
+    store, pid, _ = project
+    jobs = seed_jobs(project, 2)
+    canvas = CreationCanvas(store)
+    seen = []
+
+    def states(project_id, object_ids=()):
+        seen.append(tuple(object_ids))
+        settled = len(seen) > 1
+        return {'jobs': [{'id': str(job.id), 'status': 'failed' if settled and index else 'queued',
+                          'errorDetails': {'category': 'provider'} if settled and index else None}
+                         for index, job in enumerate(jobs)], 'terminal': settled}
+
+    monkeypatch.setattr(canvas, 'job_states', states)
+    result = asyncio.run(canvas.wait_jobs(pid, (), 5, 'all'))
+    assert seen[0] == tuple(job.id for job in jobs)
+    assert seen[1] == seen[0]
+    assert [job['status'] for job in result['jobs']] == ['queued', 'failed']
+    assert result['jobs'][1]['errorDetails'] == {'category': 'provider'}
+    assert result['terminal'] is True
+
+
+def test_job_status_includes_delivery_from_the_same_snapshot():
+    from types import SimpleNamespace
+    from test_creation_contracts import project_example
+    snapshot = project_example()
+    canvas = CreationCanvas(SimpleNamespace(snapshot=lambda _: snapshot))
+    view = canvas.job_states(snapshot.project.id, (snapshot.jobs[0].id,))['jobs'][0]
+    assert view['status'] == 'succeeded'
+    assert view['delivery']['asset'] == view['asset']
+    assert view['delivery']['adopted'] is True
+    assert [item['id'] for item in view['delivery']['canvasItems']] == [str(snapshot.canvasItems[-3].id)]
+    assert 'Inspect this existing asset directly' in view['delivery']['guidance']
+
+
+def test_open_text_contents_isolate_one_unreadable_body(project):
+    store, pid, _ = project
+    _, readable = text_material(project, title='Readable', text='\ufeffkept')
+    _, broken = text_material(project, title='Broken', text='lost')
+    (store.root / 'Unified' / 'assets' / str(broken.id)).write_text('changed')
+    assert CreationCanvas(store).text_contents(store.snapshot(pid)) == {str(readable.id): 'kept'}

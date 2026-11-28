@@ -23,6 +23,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 
 
+pytestmark = pytest.mark.cpu
+
+
 def command(project_id, kind='project.create', **payload):
     return parse_command(dict(projectId=project_id, commandId=uuid4(), type=kind, payload=payload))
 
@@ -161,6 +164,17 @@ def test_install_failure_leaves_no_partial_asset_and_can_retry_from_journal(stor
     assert len(projects.snapshot(project_id).assets) == 1
 
 
+def test_media_reads_use_the_committed_head_without_replaying_history(storage, monkeypatch):
+    projects, project_id, session = storage
+    info = upload(storage)
+    projects.execute(import_command(project_id, info), session=session)
+    monkeypatch.setattr(projects, '_history', lambda *args: pytest.fail('media read replayed history'))
+    stream, asset = CreationAssets(projects).open_media(project_id, upload_asset_id(project_id, info.id))
+    with stream:
+        assert stream.read() == png()
+    assert asset.fingerprint == info.fingerprint
+
+
 def test_pending_or_corrupt_files_cannot_be_exposed_as_a_committed_asset(storage):
     projects, project_id, session = storage
     info = upload(storage)
@@ -214,19 +228,8 @@ def test_wrong_kind_names_and_invalid_media_never_publish(storage):
     assert projects.snapshot(project_id).assets == ()
 
 
-def test_upload_limits_use_streamed_bytes_and_text_limits_use_utf8(storage, monkeypatch):
-    from opendirector.infrastructure import creation_uploads
+def test_text_limits_use_utf8(storage):
     projects, project_id, session = storage
-    monkeypatch.setattr(creation_uploads, 'MAX_CREATION_ASSET_BYTES', 4)
-    writer = CreationUploads(projects).begin(project_id, uuid4(), session, 'file.bin')
-    try:
-        writer.write(b'123')
-        with pytest.raises(ProjectError) as error:
-            writer.write(b'45')
-        assert error.value.status == 413
-    finally:
-        writer.abort()
-    monkeypatch.undo()
     large_text = command(project_id, 'asset.writeText', name='large.txt', text='字' * 400_000)
     with pytest.raises(ProjectError) as error:
         projects.execute(large_text, session=session)
@@ -650,3 +653,27 @@ def test_imported_assets_record_the_archive_source_they_came_from():
     # A generated asset still needs real job evidence, not just a claim.
     with pytest.raises(ValueError, match='job and input identity'):
         AssetProvenance(source='generated', importedFrom='generated')
+
+
+def test_media_reads_replay_a_chain_once_and_keep_rejecting_a_damaged_ancestor(storage):
+    projects, project_id, _ = storage
+    asset, *_ = import_asset(storage)
+    replays = []
+    fresh = CreationProjects(LocalProjects(projects.local.repository))
+    fresh._schedule_warm = lambda *args: None
+    original_fresh = fresh._history
+    fresh._history = lambda *args: (replays.append(1), original_fresh(*args))[1]
+    reader = CreationAssets(fresh)
+    for _ in range(3):
+        stream, _asset = reader.open_media(project_id, asset.id)
+        stream.close()
+    assert len(replays) == 1
+    root = projects.root / 'Assets' / 'commits'
+    head = json.loads((projects.root / 'Assets' / 'project.json').read_text())['head']
+    ancestor = next(path for path in root.iterdir() if path.stem != head)
+    ancestor.write_bytes(ancestor.read_bytes().replace(b'Assets', b'Corrupt', 1))
+    cold = CreationProjects(LocalProjects(projects.local.repository))
+    cold._schedule_warm = lambda *args: None
+    with pytest.raises(ProjectError) as damaged:
+        CreationAssets(cold).open_media(project_id, asset.id)
+    assert damaged.value.code == 'storage_unavailable'

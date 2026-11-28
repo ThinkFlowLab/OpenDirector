@@ -7,7 +7,7 @@ import pytest
 from capabilities import requires_posix
 
 from opendirector.agent.context import RunContext
-from opendirector.agent.gateway import ToolGateway
+from opendirector.agent.gateway import ToolGateway, ToolResult
 from opendirector.agent.tools import AgentTools
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_projects import CreationProjects
@@ -15,9 +15,30 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'
+
+
+def test_tool_events_preserve_concrete_capability_error_codes():
+    text = '最多支持 4 张图片，当前为 5 张。'
+    result = ToolResult(value={'error': text, 'code': 'image_input_count'}, error=text)
+    assert result.event('image.edit')['code'] == 'image_input_count'
+    receipt = ToolResult(value={'status': 'rejected', 'issues': [
+        {'code': 'capability_unavailable', 'message': '该模型不支持文字回复。'}]}, error='该模型不支持文字回复。')
+    assert receipt.event('generation.submit')['code'] == 'capability_unavailable'
+    assert receipt.event('generation.submit')['error'] == '该模型不支持文字回复。'
+
+
+def test_tool_event_preserves_nested_import_receipt_issue():
+    result = ToolResult(value={'status': 'rejected', 'receipt': {'issues': [
+        {'code': 'timeline_font_coverage', 'message': 'Missing glyphs'}]}}, error='Missing glyphs')
+    assert result.event('timeline.import_package')['code'] == 'timeline_font_coverage'
+    result.value['receipt']['issues'].append({'code': 'timeline_asset_missing', 'message': 'Missing asset'})
+    assert 'code' not in result.event('timeline.import_package')
 
 
 @pytest.fixture
@@ -322,6 +343,42 @@ async def test_model_preferences_do_not_add_a_business_veto(gateway):
 
 
 @pytest.mark.anyio
+async def test_close_cancels_a_pending_job_status_wait(gateway, monkeypatch):
+    """Stopping a turn must not wait out the poll window the turn asked for."""
+    entered = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def execute(*args):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(gateway.business, 'execute', execute)
+    waiter = asyncio.create_task(gateway.call('poll', 'query', {'type': 'job.status', 'waitSeconds': 300}))
+    await entered.wait()
+    await asyncio.wait_for(gateway.close(), timeout=1)
+    assert cancelled.is_set()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+
+
+@pytest.mark.anyio
+async def test_a_query_argument_shape_that_is_not_read_only_stays_a_tool_error(gateway):
+    """The read-only check runs before validation, so it must answer, not raise."""
+    from opendirector.agent.gateway import _read_only
+
+    for arguments in ({'type': ['job.status']}, ['job.status'], None, {'objectId': str(uuid4())}):
+        assert not _read_only('query', arguments)
+    assert _read_only('query', {'type': 'job.status'})
+    assert not _read_only('execute_command', {'type': 'job.status'})
+    for arguments in ({'type': ['job.status']}, ['job.status']):
+        result = await gateway.call('poll', 'query', arguments)
+        assert result.error
+
+
+@pytest.mark.anyio
 async def test_close_cancels_pending_canvas_status_wait(gateway, monkeypatch):
     entered = asyncio.Event()
     cancelled = asyncio.Event()
@@ -357,3 +414,25 @@ async def test_default_runtime_accepts_cli_command_without_help_state(gateway, m
     arguments = {'type': 'canvas.show', 'payload': {}}
     assert not (await gateway.call('first', 'execute_command', arguments)).error
     assert calls == ['execute_command']
+
+
+@pytest.mark.anyio
+async def test_read_only_query_answers_while_a_write_holds_the_execution_slot(gateway, monkeypatch):
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def execute(*args):
+        if args[4] == 'query':
+            return {'jobs': [], 'terminal': True}
+        entered.set()
+        await release.wait()
+        return {'status': 'accepted'}
+    monkeypatch.setattr(gateway.business, 'execute', execute)
+    write = asyncio.create_task(gateway.call('submit', 'execute_command', {'type': 'generation.submit', 'payload': {}}))
+    await entered.wait()
+    queued = asyncio.create_task(gateway.call('submit-again', 'execute_command', {'type': 'generation.submit', 'payload': {}}))
+    await asyncio.sleep(0.05)
+    assert not queued.done()
+    answer = await asyncio.wait_for(gateway.call('poll', 'query', {'type': 'job.status'}), 1)
+    assert answer.value['terminal'] is True
+    release.set()
+    await asyncio.gather(write, queued)
+    await gateway.close()

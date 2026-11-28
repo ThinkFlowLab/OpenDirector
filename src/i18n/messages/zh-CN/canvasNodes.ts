@@ -1,5 +1,7 @@
 /** Node frames, cards, versions, stacks and media controls. */
 export const canvasNodes = {
+  "canvasNodes.text.resize": "调整文本节点大小",
+
   "canvasNodes.kind.image": "图片",
   "canvasNodes.kind.video": "视频",
   "canvasNodes.kind.audio": "音频",
@@ -19,6 +21,9 @@ export const canvasNodes = {
   "canvasNodes.file.local": "本地文件",
   "canvasNodes.file.open": "打开预览",
   "canvasNodes.upload.missing": "素材未找到，请重新选择",
+  "canvasNodes.media.loading": "素材加载中",
+  "canvasNodes.media.failed": "素材加载失败",
+  "canvasNodes.media.retry": "重试",
   "canvasNodes.upload.aria": "上传{kind}",
   "canvasNodes.upload.local": "本地上传",
 
@@ -195,6 +200,7 @@ export const canvasNodes = {
   "canvasNodes.versionComposer.seconds": "{value} 秒",
   "canvasNodes.versionComposer.mode.reference": "参考生视频",
   "canvasNodes.versionComposer.mode.firstFrame": "首帧生视频",
+  "canvasNodes.versionComposer.mode.control": "结构控制",
   "canvasNodes.versionComposer.mode.continuation": "视频续写",
   "canvasNodes.versionComposer.mode.music": "音乐生成",
   "canvasNodes.versionComposer.mode.speech": "文本朗读",

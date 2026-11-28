@@ -1,3 +1,4 @@
+import { desktopExportStarted } from "../desktop.ts";
 import {
   AudioBufferSink,
   BlobSource,
@@ -14,12 +15,13 @@ import {
   timelineSegments,
   type TimelineSegment,
 } from "./timeline";
-import { encodeMp4 } from "./mp4Export";
+import { encodeMp4, frameAtOrAfter } from "./mp4Export";
 import {
   prepareTimelineFonts,
   drawTimelineText,
   type TimelineFontSession,
 } from "./timelineTextRenderer.ts";
+import { fetchMediaSource } from "../backend/creationClient.ts";
 
 /** Source trims, speed, offset, mute and volume share the editor's timeline semantics. */
 export async function renderTimelineMp4(
@@ -31,6 +33,13 @@ export async function renderTimelineMp4(
   if (error) throw new Error(error);
   const timeline = copyTimeline(value),
     segments = timelineSegments(timeline);
+  const visualSpans = segments
+    .filter(({ track }) => track.kind === "visual")
+    .map((segment) => ({
+      segment,
+      first: frameAtOrAfter(segment.start, timeline.fps),
+      end: frameAtOrAfter(segment.end, timeline.fps),
+    }));
   const duration = timelineDuration(timeline);
   if (!duration) throw new Error(tNow("errors.render.timelineEmpty"));
   const canvas = document.createElement("canvas");
@@ -49,6 +58,7 @@ export async function renderTimelineMp4(
   const disposeInputs = () => inputs.forEach((input) => input.dispose());
   signal.addEventListener("abort", disposeInputs, { once: true });
   let fonts: TimelineFontSession | undefined;
+  const exportFinished = desktopExportStarted();
   try {
     fonts = await prepareTimelineFonts(timeline, signal);
     for (const segment of segments) {
@@ -61,7 +71,7 @@ export async function renderTimelineMp4(
         );
       if (resource.kind === "image") {
         if (!images.has(resource.src)) {
-          const response = await fetch(resource.src, { signal });
+          const response = await fetchMediaSource(resource.src, { signal });
           if (!response.ok)
             throw new Error(
               tNow("errors.render.readFailed", {
@@ -108,7 +118,7 @@ export async function renderTimelineMp4(
       }
       let input = inputs.get(resource.src);
       if (!input) {
-        const response = await fetch(resource.src, { signal });
+        const response = await fetchMediaSource(resource.src, { signal });
         if (!response.ok)
           throw new Error(
             tNow("errors.render.readFailed", {
@@ -134,14 +144,14 @@ export async function renderTimelineMp4(
           fit: "contain",
           poolSize: 2,
         });
+        const span = visualSpans.find((entry) => entry.segment === segment)!;
         function* times() {
-          for (
-            let frame = Math.ceil(segment.start * timeline.fps);
-            frame / timeline.fps < segment.end;
-            frame++
-          )
+          for (let frame = span.first; frame < span.end; frame++) {
+            const offset = Math.max(0, frame / timeline.fps - segment.start);
+            // Sample on the current side of the source packet boundary.
             yield clip.inPoint +
-              (frame / timeline.fps - segment.start) * clip.speed;
+              offset * clip.speed + 1e-9;
+          }
         }
         videos.set(clip.id, sink.canvasesAtTimestamps(times()));
       }
@@ -168,12 +178,9 @@ export async function renderTimelineMp4(
       draw: async (time, frameIndex) => {
         context.fillStyle = "#000000";
         context.fillRect(0, 0, canvas.width, canvas.height);
-        const segment = segments.find(
-          (item) =>
-            item.track.kind === "visual" &&
-            time >= item.start &&
-            time < item.end,
-        );
+        const segment = visualSpans.find(
+          ({ first, end }) => frameIndex >= first && frameIndex < end,
+        )?.segment;
         if (segment) {
           const resource = segment.clip.resource;
           if (resource.kind === "image") {
@@ -261,6 +268,7 @@ export async function renderTimelineMp4(
         : {}),
     });
   } finally {
+    exportFinished();
     fonts?.dispose();
     signal.removeEventListener("abort", disposeInputs);
     disposeInputs();

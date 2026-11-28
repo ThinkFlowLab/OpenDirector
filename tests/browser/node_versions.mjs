@@ -13,6 +13,8 @@ const browser = await chromium.launch({
   args: ["--no-sandbox"],
 });
 const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1500, height: 1000 } });
+// Skip the first-run model setup welcome; it covers the canvas.
+await page.addInitScript(() => localStorage.setItem("opendirector.modelSetup.v1", "dismissed"));
 page.setDefaultTimeout(20000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
@@ -137,9 +139,29 @@ try {
       target: target.id,
       originalAsset: old.id,
       newAsset: written.assetId,
+      previewAsset: client.snapshot.jobs[0].asset.assetId,
     };
   });
   await page.unroute(bootstrap);
+  const previewResponses = [];
+  page.on("response", response => {
+    if (response.url().includes(`/assets/${fixture.previewAsset}/thumbnail`))
+      previewResponses.push({ url: response.url(), status: response.status() });
+  });
+  // Optional fault probes exercise the same wait and diagnostic as the journey.
+  const previewProbe = process.env.HISTORY_PREVIEW_PROBE;
+  if (previewProbe) {
+    assert.ok(["delay", "missing"].includes(previewProbe));
+    await page.route(`**/assets/${fixture.previewAsset}/thumbnail`, async route => {
+      if (previewProbe === "missing")
+        await route.fulfill({ status: 404, contentType: "application/json",
+          body: JSON.stringify({ detail: "History preview probe missing" }) });
+      else {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await route.continue();
+      }
+    });
+  }
   await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   const source = page.locator(`.react-flow__node[data-id="${fixture.source}"]`);
@@ -149,8 +171,11 @@ try {
     const client = (
       await import("/src/backend/creationClient.ts")
     ).creationClient(id);
+    const { workspaceProjection } = await import("/src/backend/workspace.ts");
+    const projection = workspaceProjection(id);
     const batch = client.batch.bind(client),
-      view = client.view.bind(client);
+      view = client.view.bind(client),
+      save = projection.save.bind(projection);
     let release;
     const gate = new Promise((resolve) => {
       release = resolve;
@@ -162,13 +187,22 @@ try {
       restore: () => {
         client.batch = batch;
         client.view = view;
+        projection.save = save;
       },
+    };
+    // Opening history flushes through projection.save. A clean canvas never
+    // reaches batch, so hold the flush the dialog actually awaits.
+    projection.save = async (...args) => {
+      await gate;
+      try {
+        return await save(...args);
+      } finally {
+        window.historyReadCheck.finished = true;
+      }
     };
     client.batch = async (...args) => {
       await gate;
-      const result = await batch(...args);
-      window.historyReadCheck.finished = true;
-      return result;
+      return batch(...args);
     };
     client.view = async (...args) => {
       window.historyReadCheck.views++;
@@ -228,9 +262,29 @@ try {
   assert.equal(fixedBounds.width, 560);
   assert.equal(fixedBounds.height, 210);
 
-  const layout = await dialog
-    .locator(".cw-version-details")
-    .first()
+  const details = dialog.locator(
+    `.cw-version-entry[data-version-asset-id="${generatedAssets[0]}"] .cw-version-details`,
+  );
+  try {
+    await details.locator("img").waitFor({ state: "visible", timeout: 10000 });
+    await page.waitForFunction(assetId => {
+      const image = document.querySelector(
+        `.cw-version-entry[data-version-asset-id="${assetId}"] .cw-version-details img`,
+      );
+      return image instanceof HTMLImageElement && image.complete &&
+        image.naturalWidth > 0 && image.naturalHeight > 0;
+    }, generatedAssets[0], { timeout: 10000 });
+  } catch (error) {
+    throw new Error(`History preview unavailable: ${JSON.stringify({
+      assetId: generatedAssets[0], responses: previewResponses,
+      media: await details.locator(".cw-version-media").allTextContents(),
+      images: await details.locator("img").evaluateAll(images => images.map(image => ({
+        src: image.currentSrc || image.src, complete: image.complete,
+        width: image.naturalWidth, height: image.naturalHeight,
+      }))),
+    })}`, { cause: error });
+  }
+  const layout = await details
     .evaluate((element) => {
       const preview = element.children[0].getBoundingClientRect();
       const composer = element.children[1].getBoundingClientRect();
@@ -747,14 +801,14 @@ try {
   }
   // A failed draft flush keeps the visible dialog blocked; reopening can retry.
   await page.evaluate(async (id) => {
-    const client = (
-      await import("/src/backend/creationClient.ts")
-    ).creationClient(id);
-    const batch = client.batch.bind(client);
+    const { workspaceProjection } = await import("/src/backend/workspace.ts");
+    const projection = workspaceProjection(id);
+    const save = projection.save.bind(projection);
     window.restoreHistoryBatch = () => {
-      client.batch = batch;
+      projection.save = save;
     };
-    client.batch = async () => {
+    // A clean canvas does not call batch. The dialog awaits this flush.
+    projection.save = async () => {
       throw new Error("模拟草稿保存失败");
     };
   }, fixture.id);

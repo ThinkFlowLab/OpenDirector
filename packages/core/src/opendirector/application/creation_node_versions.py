@@ -41,7 +41,9 @@ def version_family(projects, project_id, item_id, snapshot, *, records=None):
     if item is None or item.kind not in {'text', 'image', 'video', 'audio'}:
         raise ContractError('missing_object', '该媒体节点不存在。', item_id)
     if records is None:
-        records = projects.history(project_id)
+        # A read-only scan: history() deep-copies every snapshot, which took
+        # seconds per call on projects with hundreds of commits.
+        records = projects.records(project_id)
     family, spec_ids = {}, set()
     for record in reversed(records):
         previous = next((i for i in record.snapshot.canvasItems if i.id == item_id), None)
@@ -87,7 +89,10 @@ def current_references_differ(snapshot, frozen):
 
 
 def node_versions(projects, project_id, item_id, *, assets=None):
-    records = projects.history(project_id)
+    # Scan the shared commit records instead of history(): copying every
+    # snapshot made opening a node's versions take ~7 s on a 500-commit project.
+    # The records must not be mutated, so only the small listing is copied out.
+    records = projects.records(project_id)
     snapshot = records[0].snapshot
     item, family = version_family(projects, project_id, item_id, snapshot, records=records)
     service = assets or CreationAssets(projects)
@@ -116,10 +121,10 @@ def node_versions(projects, project_id, item_id, *, assets=None):
             modelAvailable=models[key] if job else None,
             currentReferencesDiffer=current_references_differ(snapshot, job.inputSnapshot) if job else False))
     current = current_asset(snapshot, item)
-    return dict(item=item, versions=rows, currentAssetId=current.id if current else None,
+    return deepcopy(dict(item=item, versions=rows, currentAssetId=current.id if current else None,
         eventCursor=snapshot.eventCursor,
         expectedVersions=[dict(objectType=kind, id=obj.id, revision=obj.revision)
-                          for (kind, _), obj in object_index(snapshot).items()])
+                          for (kind, _), obj in object_index(snapshot).items()]))
 
 
 def apply_node_version(history, before, command):

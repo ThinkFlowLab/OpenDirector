@@ -5,6 +5,7 @@ from pydantic import model_validator, BaseModel, ConfigDict, Field, SecretStr
 from opendirector.domain.creation.editors import ToolDraftBinding
 from opendirector.domain.capabilities import AgentInputModality
 from opendirector.domain.video_capabilities import VideoAdapter, VideoCapabilities
+from opendirector.domain.creation.models import ModelAvailability, AvailabilityCatalog
 
 
 class Model(BaseModel):
@@ -24,9 +25,15 @@ class AssetSource(Model):
 
 class ModelConnection(Model):
     connectionType: Literal['api', 'self_hosted'] = 'api'
-    protocol: Literal['openai', 'volcengine', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score'] | None = None
+    protocol: Literal['openai', 'volcengine', 'higgsfield_open', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score'] | None = None
     authMode: Literal['none', 'bearer'] | None = None
     proxyMode: Literal['system', 'direct'] | None = None
+    capabilityAutoCheck: bool | None = Field(default=None, strict=True, exclude_if=lambda value: value is None)
+
+
+class AvailabilityRefresh(Model):
+    configIds: list[UUID] | None = Field(default=None, min_length=1, max_length=200)
+    manual: bool = False
 
 
 class ModelConfigInput(ModelConnection):
@@ -34,13 +41,13 @@ class ModelConfigInput(ModelConnection):
     url: str = Field(max_length=2048)
     modelId: str = Field(max_length=200)
     apiKey: SecretStr = SecretStr("")
-    inputModalities: list[AgentInputModality] | None = Field(default=None, min_length=1, max_length=2)
+    inputModalities: list[AgentInputModality] | None = Field(default=None, min_length=1, max_length=4)
     videoAdapter: VideoAdapter | None = None
     videoCapabilities: VideoCapabilities | None = None
 
 
 class ModelOptions(Model):
-    inputModalities: list[AgentInputModality] | None = Field(default=None, min_length=1, max_length=2)
+    inputModalities: list[AgentInputModality] | None = Field(default=None, min_length=1, max_length=4)
     videoAdapter: VideoAdapter | None = None
     videoCapabilities: VideoCapabilities | None = None
 
@@ -68,6 +75,7 @@ class ModelCapabilityRequest(ModelConfigInput):
 
 
 class ModelConfigPublic(ModelConnection):
+    availability: ModelAvailability | None = Field(default=None, exclude_if=lambda value: value is None)
     providerId: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
     videoAdapter: VideoAdapter = 'auto'
     videoCapabilities: VideoCapabilities | None = None

@@ -8,6 +8,9 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, media, send, text_material, ver
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('transition', ['undo', 'redo'])
 @pytest.mark.parametrize('locked_owner', ['node', 'parent', 'second_owner'])
 @pytest.mark.parametrize('actor', ['ui', 'agent'])
@@ -402,7 +405,7 @@ def test_asset_list_batches_history_and_tool_dependencies_without_stale_usage(pr
     monkeypatch.setattr(gateway(), 'read_json', reading)
     service = CreationHistory(store)
     listing = service.asset_list(pid)
-    assert len(history_reads) == 1 and len(loads) == 1
+    assert len(history_reads) == 1 and loads == []
     assert ledger_reads == [ledger]
     assert listing['eventCursor'] == snapshot.eventCursor
     assert [row['asset'].id for row in listing['items']] == [unused.id, tool_input.id, material.id]
@@ -548,3 +551,16 @@ def test_asset_used_only_by_an_active_pinned_reference_stays_listed_after_becomi
     assert not catalog()['available']
     # Delete protection is unchanged: the derived version and history still depend on it.
     assert service.usage(store.snapshot(pid), source.id)['used']
+
+
+def test_reference_catalog_checks_files_against_its_one_snapshot(project, monkeypatch):
+    store, pid, _ = project
+    text_material(project, title='First')
+    text_material(project, title='Second')
+    loads = []
+    original = store._load
+    monkeypatch.setattr(store, '_load', lambda *args: (loads.append(args), original(*args))[1])
+    rows = CreationHistory(store).reference_catalog(pid)
+    assert len(rows) == 2 and all(row['fileAvailable'] for row in rows)
+    # Replaying the commit chain per asset held the catalog lock across a whole switch.
+    assert loads == []

@@ -11,6 +11,9 @@ from opendirector.domain.creation.commands import parse_command
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 
+
+pytestmark = pytest.mark.cpu
+
 FIXTURES = Path(__file__).parent / 'fixtures/timeline-text'
 FONT = dict(assetId=str(UUID(int=87101)), revision=1, kind='file', fingerprint='sha256:'+'a'*64)
 

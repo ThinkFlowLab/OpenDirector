@@ -20,6 +20,9 @@ from opendirector.domain.creation.models import ModelConfigPublic, ModelConfigWr
 from opendirector.domain.creation.project import ViewState
 from opendirector.domain.input_rules import input_rules
 
+
+pytestmark = pytest.mark.cpu
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = UUID(int=1)
 
@@ -346,6 +349,18 @@ def test_video_capabilities_and_reference_rules_reuse_existing_profiles():
     image = ResolvedReference(**resolved(size=config.inputRules.imageBytes + 1))
     with pytest.raises(ValueError, match='单文件大小限制'):
         validate_generation(video_spec(), config, (image,))
+
+
+def test_transmitted_text_reference_implicitly_supplies_a_blank_prompt():
+    from opendirector.domain.creation.generation import ResolvedReference
+    config = model('video', videoAdapter='minimax_h3')
+    blank = video_spec(durationSeconds=5, resolution='480P').model_copy(update={'prompt': ''})
+    text = ResolvedReference(**resolved('text'))
+    validate_generation(blank, config, (text,))
+    for references in [(), (ResolvedReference(**resolved()),),
+                       (text.model_copy(update={'transmission': 'context_only'}),)]:
+        with pytest.raises(ValueError, match='请填写生成提示词'):
+            validate_generation(blank, config, references)
 
 
 def test_frame_mode_counts_retained_image_relations_before_transmission_filtering():

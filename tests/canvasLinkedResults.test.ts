@@ -121,6 +121,50 @@ test("tool provenance is projected from history without duplicating saved edges 
   };
   assert.deepEqual(toolProvenanceEdges([submitting], document), edges);
 });
+
+test("mask composite history links each input to its pending and published result", () => {
+  const depth = createNode("video");
+  const mask = createNode("video");
+  const result = createNode("video");
+  const document = { ...createDocument(), nodes: [depth, mask, result] };
+  const running: GenerationJob = {
+    id: "composite",
+    nodeId: depth.id,
+    title: "Mask composite",
+    time: "",
+    status: "running",
+    targetNodeId: result.id,
+    tool: {
+      version: 1,
+      tool: "video-mask-composite",
+      sourceNodeIds: [depth.id, mask.id],
+      parameters: { stretch: true },
+    },
+  };
+  const edges = toolProvenanceEdges([running], document);
+  assert.deepEqual(edges.map((edge) => [edge.source, edge.target]), [
+    [depth.id, result.id], [mask.id, result.id],
+  ]);
+  const saved = { ...document, edges: [edges[0]!] };
+  assert.deepEqual(toolProvenanceEdges([running], saved), [edges[1]]);
+
+  const output: LinkedMediaResult = {
+    kind: "video", title: "Composite", src: "blob:composite", mimeType: "video/mp4",
+  };
+  const completed: GenerationJob = {
+    ...running,
+    status: "succeeded",
+    outputs: [output],
+    toolTask: { placement: "placed", outputIds: [result.id] },
+  };
+  const published = { ...result, data: { ...result.data, src: output.src } };
+  assert.deepEqual(
+    toolProvenanceEdges([completed], { ...saved, nodes: [depth, mask, published] }),
+    [edges[1]],
+  );
+  assert.deepEqual(toolProvenanceEdges([completed], saved), []);
+});
+
 for (const kind of ["timeline", "external"] as const) {
   test(`${kind} renders can join the canvas without an original media URL`, () => {
     const source = createNode(kind);

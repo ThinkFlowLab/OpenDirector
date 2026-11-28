@@ -3,7 +3,51 @@ import { detectLocale } from "../i18n/locale.ts";
 import type { Locale } from "../i18n/types.ts";
 import { tNow } from "../i18n/messages.ts";
 
-export const sessionId = crypto.randomUUID();
+const SESSION_KEY = "opendirector.session.v1";
+
+function tabStorage(): Storage | null {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const previousSession = tabStorage()?.getItem(SESSION_KEY) ?? null;
+export const reloadedTab = previousSession !== null;
+export let sessionId = previousSession ?? crypto.randomUUID();
+
+async function claimSession(id: string): Promise<boolean> {
+  if (!globalThis.navigator?.locks) return true;
+  return new Promise((resolve, reject) => {
+    void navigator.locks.request(`opendirector.session.${id}`, { ifAvailable: true }, async (lock) => {
+      resolve(Boolean(lock));
+      if (lock) await new Promise<void>(() => {});
+    }).catch(reject);
+  });
+}
+
+function installSession(id: string) {
+  sessionId = id;
+  headers["X-OpenDirector-Session"] = id;
+  try {
+    tabStorage()?.setItem(SESSION_KEY, id);
+  } catch {
+    // Storage can be disabled in the browser.
+  }
+  globalThis.window?.opendirectorDesktop?.registerSession(id);
+}
+
+export async function rotateSession() {
+  const id = crypto.randomUUID();
+  await claimSession(id);
+  installSession(id);
+}
+
+const sessionReady = (async () => {
+  if (await claimSession(sessionId).catch(() => true)) installSession(sessionId);
+  else await rotateSession();
+})();
 
 export class ApiError extends Error {
   status: number | null;
@@ -37,10 +81,28 @@ export async function responseError(response: Response) {
   );
 }
 
+type LeaseRecovery = (projectId: string) => Promise<boolean>;
+let leaseRecovery: LeaseRecovery | undefined;
+
+/** Installed by the project session owner: renew this page's lease on `projectId`.
+ *
+ * A lease lapses when renewals stop for a minute (a suspended page, a renewal
+ * stuck on a dropped connection). The server rejects the write with
+ * `session_expired` before applying anything, so one renewal and one resend of
+ * the same request is safe; commands are also deduplicated by commandId. */
+export function setLeaseRecovery(recover: LeaseRecovery | undefined) {
+  leaseRecovery = recover;
+}
+
+const PROJECT_PATH = /^\/creation\/projects\/([^/?]+)\//;
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
+  leaseRenewed = false,
 ): Promise<T> {
+  await sessionReady;
+  const requestedSession = sessionId;
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
@@ -51,7 +113,23 @@ export async function request<T>(
     if (options.signal?.aborted) throw failure;
     throw new ApiError(tNow("api.networkError"), null, "network_error");
   }
-  if (!response.ok) throw await responseError(response);
+  if (!response.ok) {
+    const error = await responseError(response);
+    const projectId = PROJECT_PATH.exec(path)?.[1];
+    if (
+      error.status === 409 &&
+      error.code === "session_expired" &&
+      !leaseRenewed &&
+      requestedSession === sessionId &&
+      projectId &&
+      leaseRecovery &&
+      !options.signal?.aborted &&
+      (await leaseRecovery(projectId).catch(() => false))
+    ) {
+      if (requestedSession === sessionId) return request<T>(path, options, true);
+    }
+    throw error;
+  }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }

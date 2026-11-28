@@ -1,5 +1,6 @@
+import { availabilityBlocker } from "../backend/availability.ts";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { rememberAgentSelection, restoreAgentSelection, builtinThinking } from "./agentPreferences";
+import { assistantModelSelection, preferredMediaModel, rememberAgentSelection, rememberMediaSelection, restoreAgentSelection } from "./agentPreferences";
 import { errorMessage } from "../backend/api";
 import {
   attachChat,
@@ -17,6 +18,8 @@ import {
   stopChat,
   type ChatAsset,
   type Conversation,
+  type ModelSelections,
+  conversationIsEmpty,
 } from "../backend/chat";
 import { flushChatDraft, rememberChat } from "../backend/chatDrafts";
 import { creationClient } from "../backend/creationClient.ts";
@@ -74,10 +77,13 @@ export function useAssistantChat(
   onTurnEnd: () => void,
   t: Translate,
   open: boolean,
+  readOnly = false,
 ) {
   const [value, setValue] = useState<Conversation>(empty);
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const mode = readOnly ? "preview" : "edit";
+  const [loadedMode, setLoadedMode] = useState<typeof mode | null>(null);
+  const loaded = loadedMode === mode;
   const [runtimesLoading, setRuntimesLoading] = useState(true);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [sending, setSending] = useState(false);
@@ -134,6 +140,8 @@ export function useAssistantChat(
   const onEnd = useRef(onTurnEnd);
   onEnd.current = onTurnEnd;
 
+  const canWrite = useRef(!readOnly);
+  canWrite.current = !readOnly;
   const refreshConversations = useCallback(async (saveDraft = false) => {
     listController.current?.abort();
     const abort = new AbortController();
@@ -141,7 +149,7 @@ export function useAssistantChat(
     setThreadsLoading(true);
     setThreadsError("");
     try {
-      if (saveDraft) {
+      if (saveDraft && canWrite.current) {
         rememberChat(projectId, current.current);
         await flushChatDraft(projectId);
         abort.signal.throwIfAborted();
@@ -164,7 +172,7 @@ export function useAssistantChat(
   useEffect(() => {
     alive.current = true;
     let cancelled = false;
-    setLoaded(false);
+    setLoadedMode(null);
     setRuntimes([]);
     setRuntimesLoading(true);
     setError("");
@@ -187,7 +195,7 @@ export function useAssistantChat(
       .then(({ conversation: saved, activeTurnId }) => {
         if (cancelled) return;
         setValue(restoreConversation(projectId, saved, Boolean(activeTurnId)));
-        setLoaded(true);
+        setLoadedMode(mode);
         // Navigation only detached the previous view; pick the run back up.
         if (activeTurnId) void resume.current(activeTurnId);
       })
@@ -214,7 +222,7 @@ export function useAssistantChat(
       uploadController.current?.abort();
       listController.current?.abort();
     };
-  }, [projectId, loadAttempt, refreshConversations]);
+  }, [projectId, loadAttempt, refreshConversations, mode]);
 
   useEffect(() => {
     if (loaded && !runtimesLoading && runtimes.length && value.runtime &&
@@ -224,11 +232,11 @@ export function useAssistantChat(
   }, [loaded, runtimesLoading, runtimes, value.runtime]);
 
   useLayoutEffect(() => {
-    if (loaded) rememberChat(projectId, value);
-  }, [projectId, loaded, value]);
+    if (loaded && !readOnly) rememberChat(projectId, value);
+  }, [projectId, loaded, value, readOnly]);
   useEffect(() => {
     if (
-      !loaded ||
+      readOnly || !loaded ||
       !runtimes.some((item) => item.id === (value.runtime ?? "default"))
     )
       return;
@@ -256,10 +264,11 @@ export function useAssistantChat(
     value.runtimeModel,
     value.harnessModels,
     runtimes,
+    readOnly,
   ]);
 
   useEffect(() => {
-    if (!loaded || !catalog.connected) return;
+    if (!loaded || !catalog.connected || sending) return;
     setValue((previous) => {
       const selections = { ...previous.modelSelections };
       let changed = false;
@@ -267,23 +276,26 @@ export function useAssistantChat(
         const options = catalog.models.filter(
           (model) => model.kind === kind && isGenerationModel(model),
         );
-        if (!options.some((model) => model.id === selections[kind])) {
+        const preferred = kind === "agent" ? undefined
+          : preferredMediaModel(projectId, previous.conversationId, kind, options);
+        let next = preferred ?? selections[kind];
+        if (!options.some((model) => model.id === next)) {
           // Canvas creation uses the same deterministic generation fallback
           // before the assistant conversation has loaded. Loading the picker
           // must not silently change that choice to the API's first row.
           const resolution = kind === "agent" ? null
             : resolveGenerationModel({}, kind, catalog.models);
-          const next = kind === "agent" ? options[0]?.id ?? null
+          next = kind === "agent" ? options[0]?.id ?? null
             : resolution?.status === "default" ? resolution.modelConfigId : null;
-          if (selections[kind] !== next) {
-            selections[kind] = next;
-            changed = true;
-          }
+        }
+        if (selections[kind] !== next) {
+          selections[kind] = next;
+          changed = true;
         }
       }
       return changed ? { ...previous, modelSelections: selections } : previous;
     });
-  }, [loaded, catalog.connected, catalog.models]);
+  }, [projectId, loaded, catalog.connected, catalog.models, sending]);
 
   const agent = catalog.models.find(
     (model) =>
@@ -312,7 +324,13 @@ export function useAssistantChat(
     return () => abort.abort();
   }, [open, loaded, runtimesLoading, runtimeToCheck, refreshRuntimes]);
 
+  const checkCapabilities = catalog.refreshAvailability;
+  useEffect(() => {
+    if (open && currentRuntime?.modelSource === "settings" && agent) void checkCapabilities([agent.id]);
+  }, [open, currentRuntime?.modelSource, agent?.id, checkCapabilities]);
+  const availabilityIssue = currentRuntime?.modelSource === "settings" ? availabilityBlocker(agent, "text_response") : null;
   const canSend =
+    !availabilityIssue &&
     currentRuntime?.status === "ready" &&
     !!currentRuntime.available &&
     (currentRuntime.modelSource === "cli" || !!agent);
@@ -442,6 +460,7 @@ export function useAssistantChat(
 
   const send = async () => {
     if (
+      !canWrite.current ||
       !loaded ||
       switching.current ||
       submitting.current ||
@@ -458,13 +477,10 @@ export function useAssistantChat(
         {
           id,
           conversationId: input.conversationId,
-          modelId: agent?.id,
-          runtime: input.runtime ?? "default",
-          runtimeModel: input.runtimeModel,
+          ...assistantModelSelection(input, agent?.id),
           text: input.draft,
           content: input.draftContent,
           assets: input.assets.map((asset) => asset.id),
-          thinking: builtinThinking(input, agent?.id),
           modelSelections: input.modelSelections,
           skills: input.skills ?? [],
         },
@@ -535,6 +551,16 @@ export function useAssistantChat(
                   : message,
               ),
             }));
+          } else if (event.type === "sources") {
+            setValue((previous) => ({
+              ...previous,
+              messages: previous.messages.map((message) => message.id === assistantId
+                ? { ...message, sources: Array.from(new Map([
+                    ...event.sources.map((source) => [source.id, source] as const),
+                    ...(message.sources ?? []).map((source) => [source.id, source] as const),
+                  ]).values()) }
+                : message),
+            }));
           } else if (event.type === "thinking") setThinkingNow(true);
           else if (event.type === "plan") {
             setValue((previous) => ({
@@ -586,15 +612,17 @@ export function useAssistantChat(
     }
   };
   const changeConversation = async (
-    id: string = crypto.randomUUID(),
+    id?: string,
     create = false,
   ): Promise<boolean> => {
-    if (!loaded || submitting.current || uploading.current || switching.current)
+    if (!canWrite.current || !loaded || submitting.current || uploading.current || switching.current)
       return false;
+    if (create && conversationIsEmpty(current.current)) return true;
     if (!create && current.current.conversationId === id) return true;
+    id ??= crypto.randomUUID();
     switching.current = true;
     setChanging(true);
-    setLoaded(false);
+    setLoadedMode(null);
     setError("");
     try {
       rememberChat(projectId, current.current);
@@ -615,12 +643,12 @@ export function useAssistantChat(
       switching.current = false;
       if (alive.current) {
         setChanging(false);
-        setLoaded(true);
+        setLoadedMode(mode);
       }
     }
   };
   const stop = async () => {
-    if (!turnId.current || stopping) return;
+    if (!canWrite.current || !turnId.current || stopping) return;
     setStopping(true);
     try {
       await stopChat(projectId, turnId.current);
@@ -633,19 +661,27 @@ export function useAssistantChat(
       }
     }
   };
+  const updateSelection = (next: Conversation) => {
+    current.current = next;
+    rememberChat(projectId, next);
+    setValue(next);
+    setError("");
+  };
   return {
     value,
     runtimes,
     runtimesLoading,
     refreshRuntimes,
-    setValue,
     selectAgent: (patch: Partial<Conversation>) => {
       const next = {...current.current, ...patch};
       rememberAgentSelection(projectId, next);
-      current.current = next;
-      rememberChat(projectId, next);
-      setValue(next);
-      setError("");
+      updateSelection(next);
+    },
+    selectMediaModel: (kind: keyof ModelSelections, id: string) => {
+      if (kind === "agent") return;
+      const previous = current.current;
+      rememberMediaSelection(projectId, previous.conversationId, kind, id);
+      updateSelection({ ...previous, modelSelections: { ...previous.modelSelections, [kind]: id } });
     },
     setContent,
     referenceAssets: [...knownAssets.current.values()],
@@ -664,6 +700,7 @@ export function useAssistantChat(
     setError,
     agent,
     canSend,
+    availabilityIssue,
     adding,
     upload,
     addNodes,

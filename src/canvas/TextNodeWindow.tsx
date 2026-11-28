@@ -1,8 +1,16 @@
-import { useEffect, useId, useRef, type KeyboardEvent } from "react";
+import {
+  useLayoutEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { useT } from "../i18n/I18nProvider";
 import type { CanvasNode } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
+import { TextNodeEditor, type TextSelections } from "./TextNodeEditor";
+import { TextMarkdown } from "./TextMarkdown";
 import "./text-node-window.css";
 
 /** A large editing surface for a text node.
@@ -15,6 +23,8 @@ import "./text-node-window.css";
 export function TextNodeWindow({
   node,
   locked,
+  readOnly = false,
+  selections,
   onUpdate,
   onClose,
   onBeginEdit,
@@ -22,6 +32,8 @@ export function TextNodeWindow({
 }: {
   node: CanvasNode;
   locked: boolean;
+  readOnly?: boolean;
+  selections: TextSelections;
   onUpdate: (text: string) => void;
   onClose: () => void;
   onBeginEdit: () => void;
@@ -29,17 +41,19 @@ export function TextNodeWindow({
 }) {
   const t = useT();
   const panel = useRef<HTMLDivElement>(null);
-  const input = useRef<HTMLTextAreaElement>(null);
+  const previewBody = useRef<HTMLDivElement>(null);
+  const [preview, setPreview] = useState(false);
   const titleId = useId();
   const hintId = useId();
   const text = node.data.text ?? "";
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (readOnly) {
+      previewBody.current?.focus({ preventScroll: true });
+      return;
+    }
     onBeginEdit();
-    const area = input.current;
-    area?.focus({ preventScroll: true });
-    area?.setSelectionRange(area.value.length, area.value.length);
     return onEndEdit;
-  }, [onBeginEdit, onEndEdit]);
+  }, [onBeginEdit, onEndEdit, readOnly]);
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape" && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -52,7 +66,7 @@ export function TextNodeWindow({
     // become the next tab stop while this surface is open.
     const controls = [
       ...(panel.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled),textarea:not(:disabled),[tabindex="0"]',
+        'button:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]',
       ) ?? []),
     ];
     const edge = event.shiftKey ? controls[0] : controls.at(-1);
@@ -86,11 +100,31 @@ export function TextNodeWindow({
               {node.data.title || t("canvas.kind.text")}
             </strong>
             <small id={hintId}>
-              {locked
+              {locked || readOnly
                 ? t("canvas.textWindow.locked")
                 : t("canvas.textWindow.hint")}
             </small>
           </div>
+          {!readOnly && <div
+            className="cw-text-window-modes"
+            role="group"
+            aria-label={t("canvas.textWindow.mode")}
+          >
+            <button
+              type="button"
+              aria-pressed={!preview}
+              onClick={() => setPreview(false)}
+            >
+              {t("canvas.textWindow.edit")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={preview}
+              onClick={() => setPreview(true)}
+            >
+              {t("canvas.textWindow.preview")}
+            </button>
+          </div>}
           <div className="cw-text-window-controls">
             <TooltipButton
               label={t("common.close")}
@@ -102,24 +136,34 @@ export function TextNodeWindow({
             </TooltipButton>
           </div>
         </header>
-        <textarea
-          ref={input}
-          className="cw-text-window-input nodrag nopan nowheel"
-          aria-labelledby={titleId}
-          aria-describedby={hintId}
-          placeholder={t("canvasNodes.text.placeholder")}
-          spellCheck={false}
-          readOnly={locked}
-          value={text}
-          onChange={(event) => onUpdate(event.target.value)}
-          onKeyDown={(event) => {
-            // Canvas shortcuts act on nodes; typing here belongs to the text.
-            // Escape still bubbles so the window can close without committing a
-            // half-finished IME composition.
-            if (event.key !== "Escape" || event.nativeEvent.isComposing)
-              event.stopPropagation();
-          }}
-        />
+        {preview || readOnly ? (
+          <div
+            ref={previewBody}
+            className="cw-text-window-input cw-text-window-preview nodrag nopan nowheel"
+            tabIndex={0}
+          >
+            <TextMarkdown text={text} />
+          </div>
+        ) : (
+          <TextNodeEditor
+            id={node.id}
+            value={text}
+            locked={locked}
+            selections={selections}
+            className="cw-text-window-input nodrag nopan nowheel"
+            aria-labelledby={titleId}
+            aria-describedby={hintId}
+            placeholder={t("canvasNodes.text.placeholder")}
+            onUpdate={onUpdate}
+            onKeyDown={(event) => {
+              // Canvas shortcuts act on nodes; typing here belongs to the text.
+              // Escape still bubbles so the window can close without committing a
+              // half-finished IME composition.
+              if (event.key !== "Escape" || event.nativeEvent.isComposing)
+                event.stopPropagation();
+            }}
+          />
+        )}
         <footer className="cw-text-window-footer">
           <span>{t("canvas.textWindow.count", { count: text.length })}</span>
           {locked && (

@@ -18,6 +18,9 @@ from opendirector.domain.projects import ProjectError
 from opendirector_api.main import create_app
 from opendirector.infrastructure.local_projects import LocalProjects
 
+
+pytestmark = pytest.mark.cpu
+
 FAKE = r'''
 import json, os, shutil, subprocess, sys
 from pathlib import Path
@@ -62,6 +65,10 @@ for line in sys.stdin:
  elif req['method']=='session/prompt':
   assert Path(os.environ['PWD']).samefile(Path.cwd())
   blocks=[block['text'] for block in req['params']['prompt']]
+  execution_context = blocks[0 if resumed else 1]
+  assert '3 to 5 distinct suggestions' in execution_context, 'missing suggested reply count'
+  assert 'at most 80 characters per suggestion' in execution_context, 'missing suggested reply length limit'
+  assert '[opendirector-replies]: #' in execution_context.splitlines(), 'missing suggested reply marker'
   if resumed:
    assert blocks[0].startswith('Execution directory:')
    assert not any('Conversation history' in block or 'You are OpenDirector' in block for block in blocks)
@@ -72,7 +79,7 @@ for line in sys.stdin:
   text=blocks[-1]
   if mode!='wait':
    assert text.startswith('Current user request' + chr(10))
-   assert 'Summarize the delivered result and material limitations.' in text
+   assert 'delivered result and material limitations' not in text
    assert 'User model preferences for this turn:' in text and 'selected-image' in text
   patch=json.loads(Path(sys.argv[sys.argv.index('--patch')+1]).read_text())
   assert next(row for row in patch if row['id']=='skill-filesystem')['config']['includeDefaultRoots'] is False
@@ -123,6 +130,7 @@ def test_catalog_from_acp_config(cli):
 
 
 @pytest.mark.parametrize('mode', ['success', 'incomplete', 'permission'])
+@pytest.mark.merge
 def test_acp_shared_write_and_native_trace(cli, tmp_path, monkeypatch, mode):
     monkeypatch.setenv('DEEPSEEK_TEST', mode)
     local = LocalProjects(tmp_path)
@@ -136,7 +144,7 @@ def test_acp_shared_write_and_native_trace(cli, tmp_path, monkeypatch, mode):
         assert (events[-1]['error'] is None) == (mode != 'incomplete'), events
         message = events[-1]['conversation']['messages'][-1]
         assert message['text'] == 'Saved.'
-        assert {'type': 'thinking'} in events
+        assert any(event['type'] == 'thinking' for event in events)
         assert 'Test native thought' not in response.text
         assert message['plan'] == [{'content': 'Save the plan', 'status': 'completed'}]
         assert client.get(path + '/assistant').json()['messages'][-1]['plan'] == message['plan']
@@ -204,6 +212,18 @@ def test_native_desktop_model_overlay_is_private_and_respects_acp_overrides(tmp_
     acp.write_text(json.dumps([{'id':'llm-pi-ai','config':{}},{'id':'acp','config':{'provider':'other','model':'custom'}}]))
     args = deepseek.arguments(private)
     assert [row['id'] for row in json.loads(Path(args[-1]).read_text())] == ['skill-filesystem']
+
+
+def test_acp_default_uses_the_official_image_capable_route(tmp_path, monkeypatch):
+    private = tmp_path / 'private'
+    private.mkdir()
+    monkeypatch.setenv('DSH_HOME', str(tmp_path / 'empty-home'))
+    monkeypatch.setattr(deepseek.shutil, 'which', lambda _: '/installed/dsh')
+    arguments = deepseek.arguments(private)
+    patch = json.loads(Path(arguments[-1]).read_text())
+    assert next(row['config'] for row in patch if row['id'] == 'acp') == {
+        'provider': 'deepseek-official', 'model': 'deepseek-flash',
+    }
 
 
 def test_selected_model_efforts_keep_native_default_identity(cli, monkeypatch):

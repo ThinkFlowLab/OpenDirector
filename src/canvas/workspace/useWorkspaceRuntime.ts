@@ -7,6 +7,7 @@ import { useNodeVersionCounts } from "../NodeVersionHistory";
 import { CreationEditorSession } from "../../backend/creationEditorSession";
 import { MediaPublication } from "../../backend/mediaPublication";
 import { useBackendModels } from "../../backend/models.ts";
+import { isGenerationModel } from "../../backend/rules.ts";
 import { useToolCatalog } from "../../backend/tools.ts";
 import { type CanvasFlowSurfaceHandle } from "../CanvasFlowSurface";
 import { useCanvasNotifications } from "../CanvasNotifications";
@@ -17,6 +18,7 @@ import { modelFrameCapabilities } from "../frameReferences";
 import { validateNodeActionSource, type ResultSource } from "../linkedResults";
 
 import { newNodeGenerationSettings } from "../modelResolution.ts";
+import { preferredMediaModel } from "../agentPreferences.ts";
 import { type CanvasDocument, type CanvasNode, type CanvasNodeData, type CanvasNodeKind, type Point } from "../model";
 import { type CanvasFragment } from "../operations";
 import { type ClipboardMedia } from "../clipboardMedia.ts";
@@ -147,11 +149,17 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
   );
   const toolCatalog = useToolCatalog(
     backendCatalog.connected,
-    backendCatalog.models,
+    backendCatalog.availabilityRevision,
+    t,
   );
   const setupChecked = useRef(false);
   const theme = useTheme();
   const serviceRuns = useRef(new Map<string, ServiceRun>());
+  // Jobs seen running in this session. Only their results can still be
+  // arriving; historical, undone or version-switched results are never pending.
+  const watchedJobs = useRef(new Set<string>());
+  for (const job of jobs)
+    if (!job.tool && job.status === "running") watchedJobs.current.add(job.id);
   const generationByNode = useMemo(
     () =>
       generationActivities(
@@ -166,8 +174,15 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
               ),
           ),
           ...jobActivities(
-            jobs.filter((job) => !job.tool),
+            jobs
+              .filter((job) => !job.tool)
+              .map((job) =>
+                job.deliveredAssetId && !watchedJobs.current.has(job.id)
+                  ? { ...job, deliveredAssetId: undefined }
+                  : job,
+              ),
             doc.id,
+            doc.nodes,
           ),
           ...jobActivities(
             jobs.filter((job) => job.tool),
@@ -176,7 +191,7 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
         ],
         doc.id,
       ),
-    [activeGenerations, doc.id, jobs],
+    [activeGenerations, doc.id, doc.nodes, jobs],
   );
   const clipboard = useRef<CanvasFragment | null>(null);
   const clipboardMedia = useRef<ClipboardMedia | null>(null);
@@ -271,11 +286,15 @@ export function useWorkspaceRuntime(): WorkspaceRuntime {
         : {};
     }
     if (kind !== "image" && kind !== "video" && kind !== "audio") return {};
+    const preferred = assistantModels[kind] ?? preferredMediaModel(
+      doc.id, undefined, kind,
+      backendCatalog.models.filter((model) => model.kind === kind && isGenerationModel(model)),
+    );
     return {
       settings: newNodeGenerationSettings(
         kind,
         backendCatalog.models,
-        assistantModels,
+        { [kind]: preferred },
       ),
     };
   };

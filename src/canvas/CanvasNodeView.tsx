@@ -1,5 +1,8 @@
 import { memo, useContext, type MouseEvent } from "react";
-import type { Node, NodeProps } from "@xyflow/react";
+import { NodeResizeControl, type Node, type NodeProps } from "@xyflow/react";
+import { TEXT_NODE_MIN_SIZE } from "./model";
+import { TextNodeEditor } from "./TextNodeEditor";
+import { TextMarkdown } from "./TextMarkdown";
 import { NodeFrame } from "./NodeFrame";
 import type { CanvasNodeData, CanvasNodeKind, CanvasResource } from "./model";
 import { ResourcePreview } from "./EditorModal";
@@ -7,8 +10,10 @@ import { resourceFromNode } from "./operations";
 import { timelineDuration } from "./timeline";
 import { SubjectNodeCard } from "./SubjectNodeCard";
 import { CanvasIcon } from "./CanvasIcon";
+import { AssetMediaActive, useAssetMedia, useInViewport } from "./useAssetMedia.tsx";
 import { TooltipButton } from "./TooltipButton";
 import { GeneratingOverlay } from "./GeneratingOverlay";
+import { TimelinePendingVideo } from "./TimelineOutput";
 import { CanvasVideoPreview } from "./CanvasMediaPreview";
 import "./nodes.css";
 import {
@@ -18,7 +23,7 @@ import {
 import { useI18n } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 
-export type CanvasFlowNode = Node<CanvasNodeData, CanvasNodeKind>;
+export type CanvasFlowNode = Node<CanvasNodeData & { timelineOutput?: Parameters<typeof TimelinePendingVideo>[0]["output"] }, CanvasNodeKind>;
 
 const kindNameKeys: Record<CanvasNodeKind, MessageKey> = {
   image: "canvasNodes.kind.image",
@@ -46,6 +51,12 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
   const actions = useContext(CanvasActionsContext);
   const kind = data.kind;
   const hasAsset = Boolean(data.src) && data.assetState !== "missing";
+  const [viewportProbe, inViewport] = useInViewport<HTMLSpanElement>();
+  const media = useAssetMedia(
+    ["image", "video", "audio"].includes(kind) ? data.src : undefined,
+    inViewport,
+  );
+  const mediaPending = Boolean(data.src) && media.state !== "ready";
   const locked = Boolean(actions?.isLocked(id));
   const activity = ["text", "image", "video", "audio"].includes(kind)
     ? actions?.generationActivity(id)
@@ -58,17 +69,27 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
     else actions?.select(id, event);
   };
 
+  if (data.timelineOutput) return <TimelinePendingVideo id={id} selected={selected} output={data.timelineOutput} />;
+
   return (
+    <AssetMediaActive.Provider value={inViewport}>
     <NodeFrame
       id={id}
       kind={kind}
       title={data.title || t(kindNameKeys[kind])}
       selected={selected}
       empty={
-        kind === "subject" ? !data.subject?.main?.src : !hasAsset && !data.text
+        kind === "subject"
+          ? !data.subject?.main?.src
+          : !hasAsset && !mediaPending && !data.text
       }
       busy={Boolean(activity)}
     >
+      <span
+        ref={viewportProbe}
+        className="cw-node-viewport-probe"
+        aria-hidden="true"
+      />
       {kind === "group" ? (
         <div className="cw-group-interior" />
       ) : kind === "subject" ? (
@@ -77,19 +98,17 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
         <DomainCard id={id} data={data} actions={actions} />
       ) : kind === "text" ? (
         actions?.isTextEditing(id) ? (
-          <textarea
+          <TextNodeEditor
+            id={id}
+            defaultValue={data.text ?? ""}
+            locked={locked}
+            selections={actions.textSelections}
             className="cw-text-editor nodrag nopan nowheel"
             aria-label={t("canvasNodes.text.content", { title: data.title })}
             placeholder={t("canvasNodes.text.placeholder")}
-            spellCheck={false}
-            readOnly={locked}
-            autoFocus
-            defaultValue={data.text ?? ""}
             onFocus={() => actions?.beginEdit?.(id)}
             onBlur={() => actions?.finishTextEdit()}
-            onChange={(event) =>
-              actions?.update(id, { text: event.target.value })
-            }
+            onUpdate={(text) => actions?.update(id, { text })}
             onKeyDown={(event) => {
               if (event.key !== "Escape" || event.nativeEvent.isComposing)
                 event.stopPropagation();
@@ -97,22 +116,54 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
           />
         ) : (
           <div
-            className="cw-text-display"
+            className="cw-text-display nowheel"
             aria-label={t("canvasNodes.text.content", { title: data.title })}
           >
-            {data.text || (
+            {data.text ? (
+              <TextMarkdown text={data.text} />
+            ) : (
               <span className="cw-text-placeholder">
                 {t("canvasNodes.text.editHint")}
               </span>
             )}
           </div>
         )
+      ) : mediaPending ? (
+        <div
+          className="cw-node-placeholder cw-node-media-status"
+          role="status"
+          aria-busy={media.state === "loading"}
+        >
+          <span className="cw-placeholder-symbol">
+            <CanvasIcon name={kind} size={20} />
+          </span>
+          <span className="cw-placeholder-label">
+            {t(
+              media.state === "loading"
+                ? "canvasNodes.media.loading"
+                : "canvasNodes.media.failed",
+            )}
+          </span>
+          {media.state === "failed" && (
+            <button
+              type="button"
+              className="cw-placeholder-upload nodrag nopan"
+              disabled={actions?.readOnly}
+              onClick={(event) => {
+                event.stopPropagation();
+                media.retry();
+              }}
+            >
+              {t("canvasNodes.media.retry")}
+            </button>
+          )}
+        </div>
       ) : hasAsset ? (
         <div className="cw-node-media">
           {kind === "image" && (
             <img
               className="cw-image-preview"
-              src={data.src}
+              src={media.src}
               alt={data.title}
               draggable={false}
               onLoad={(event) =>
@@ -126,7 +177,7 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
           {kind === "video" && (
             <CanvasVideoPreview
               className="cw-video-preview"
-              src={data.src}
+              src={media.src}
               playsInline
               preload="metadata"
               selected={selected}
@@ -159,7 +210,7 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
               </div>
               <audio
                 className="nodrag nopan"
-                src={data.src}
+                src={media.src}
                 controls
                 preload="metadata"
                 onClick={selectMedia}
@@ -222,6 +273,25 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
         </div>
       )}
 
+      {kind === "text" && selected && !locked && (
+        <NodeResizeControl
+          position="bottom-right"
+          className="cw-text-resize nodrag nopan"
+          shouldResize={() => !actions?.readOnly}
+          minWidth={TEXT_NODE_MIN_SIZE.width}
+          minHeight={TEXT_NODE_MIN_SIZE.height}
+          onResizeStart={() => actions?.beginResize()}
+          // XYFlow emits the final dimensions after its resize-end callback.
+          onResizeEnd={() => queueMicrotask(() => actions?.endResize())}
+        >
+          <span
+            aria-label={t("canvasNodes.text.resize")}
+            title={t("canvasNodes.text.resize")}
+          >
+            ◢
+          </span>
+        </NodeResizeControl>
+      )}
       {activity && (
         <GeneratingOverlay
           activity={activity}
@@ -229,6 +299,7 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
         />
       )}
     </NodeFrame>
+    </AssetMediaActive.Provider>
   );
 }
 

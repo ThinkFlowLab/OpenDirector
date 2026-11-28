@@ -1,5 +1,11 @@
 /** Model connection and service forms. */
 export const models = {
+  "models.service.urlPlaceholder": "Enter your service's API base URL",
+  "models.service.modelPlaceholder": "Enter the model ID from your service",
+  "models.protocolOption.bigmodelVideo": "Zhipu BigModel video API (CogVideoX-3)",
+  "models.service.bigmodelVideoSummary": "Text-to-video / single image / first-last frames",
+  "models.service.bigmodelVideoReferences": "PNG or JPEG, up to 5 MB each. Prompts allow 512 characters. Choose a pixel size and a 5- or 10-second duration.",
+
   "models.service.proxyMode": "Network connection mode",
   "models.service.proxySystem": "Use system proxy",
   "models.service.proxyDirect": "Direct (no proxy)",
@@ -71,13 +77,17 @@ export const models = {
   "models.service.hide": "Hide",
   "models.service.show": "Show",
   "models.service.urlNote":
-    "Self-hosted services usually use a /v1 URL; when connecting through an SSH tunnel, enter the local forwarded address.",
+    "Enter the API base URL provided by your service.",
+  "models.service.beijingWorkspaceUrl":
+    "Use a Beijing API key. To use your workspace endpoint, enter https://<workspace-id>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 with your workspace ID.",
   "models.service.inputCapabilities": "Input capabilities",
   "models.service.referenceOutput": "References and output",
   "models.service.textInput": "Text",
   "models.service.imageInput": "Image understanding",
-  "models.service.imageInputNote":
-    "Enable only when the model natively accepts image input.",
+  "models.service.videoInput": "Video understanding",
+  "models.service.audioInput": "Audio understanding",
+  "models.service.mediaInputNote":
+    "Enable the input types supported by this model and its API.",
   "models.service.officialSummary":
     "Text-to-video / first-last frame / multimodal references",
   "models.service.klingSummary": "Text-to-video / first-last frame / image references",
@@ -102,6 +112,8 @@ export const models = {
     "Auto-detect known models; use the generic first-frame API for others",
   "models.service.adapterFastH3":
     "FastH3-Omni (8 steps, multi-asset reference)",
+  "models.service.adapterFastH3Dual":
+    "FastH3-Omni (first/last keyframe anchors)",
   "models.service.adapterMiniMaxH3":
     "Native MiniMax-H3 (first frame, asset references, continuation)",
   "models.service.adapterStandard":
@@ -128,6 +140,7 @@ export const models = {
   "models.service.minimaxNote":
     "The model list comes from the built-in declaration. Loading it does not verify the key or create a video task.",
   "models.service.save": "Save service",
+  "models.service.saveAndContinue": "Save and continue",
   "models.service.testing": "Testing…",
   "models.service.testPassed": "Passed in {seconds} s",
   "models.service.noOutputPreset":
@@ -141,6 +154,10 @@ export const models = {
   "models.protocolOption.videos": "Async /videos API (including vLLM-Omni)",
   "models.protocolOption.minimaxVideo": "MiniMax official video V2",
   "models.protocolOption.klingVideo": "Kling official video API",
+  "models.protocolOption.higgsfieldOpen": "Higgsfield Open API",
+  "models.service.higgsfieldNote": "Enter KEY_ID:KEY_SECRET from Higgsfield Open.",
+  "models.service.higgsfieldSummary": "Text-to-video / first-last frames / image, video and audio references",
+  "models.service.higgsfieldReferences": "References: up to 10 JPEG/PNG/WebP/GIF images, 5 MP4 videos and 5 WAV audio clips. Each clip must be 2–30 seconds; video and audio each allow 30 seconds in total. Convert MOV to MP4 and MP3 to WAV before uploading.",
   "models.protocolOption.depth": "vLLM-Omni depth API (Video Depth Anything)",
   "models.protocolOption.tts":
     "OpenAI-compatible speech synthesis (including vLLM-Omni TTS)",

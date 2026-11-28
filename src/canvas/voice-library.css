@@ -42,6 +42,75 @@
   color: #c9baff;
   border-bottom-color: #b8a5ff;
 }
+.cw-voice-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  min-height: 32px;
+  margin-bottom: 10px;
+  border: 1px solid var(--cw-popover-border);
+  border-radius: 6px;
+  background: #ffffff08;
+}
+.cw-voice-search:focus-within {
+  border-color: #b8a5ff;
+}
+.cw-voice-library .cw-voice-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.cw-voice-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+.cw-voice-search button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+}
+.cw-voice-search button:hover {
+  background: #ffffff12;
+}
+.cw-voice-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  min-height: 18px;
+}
+.cw-voice-loading-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  height: 14px;
+  color: #c9baff;
+}
+.cw-voice-loading-wave i {
+  width: 2px;
+  height: 7px;
+  border-radius: 2px;
+  background: currentColor;
+  animation: cw-voice-wave 1.05s ease-in-out infinite;
+}
+.cw-voice-loading-wave i:nth-child(2) {
+  height: 11px;
+  animation-delay: 0.12s;
+}
+.cw-voice-loading-wave i:nth-child(3) {
+  animation-delay: 0.24s;
+}
+@keyframes cw-voice-wave {
+  0%, 70%, 100% { transform: scaleY(0.5); }
+  35% { transform: scaleY(1); }
+}
 .cw-voice-filters {
   display: flex;
   gap: 8px;
@@ -94,6 +163,32 @@
   border: 1px solid #ffffff24;
   border-radius: 50%;
   background: #ffffff08;
+}
+.cw-voice-skeleton {
+  pointer-events: none;
+  animation: cw-voice-skeleton-pulse 1.45s ease-in-out infinite alternate;
+}
+.cw-voice-skeleton:nth-child(even) {
+  animation-delay: 0.16s;
+}
+.cw-voice-skeleton-name,
+.cw-voice-skeleton-actions {
+  border-radius: 4px;
+  background: #c9baff24;
+}
+.cw-voice-skeleton-name {
+  width: 62%;
+  height: 8px;
+  margin: 4px 0;
+}
+.cw-voice-skeleton-actions {
+  width: 13px;
+  height: 4px;
+  margin: 5px 0;
+}
+@keyframes cw-voice-skeleton-pulse {
+  from { opacity: 0.45; }
+  to { opacity: 0.88; }
 }
 .cw-voice-no-preview {
   cursor: default;
@@ -280,5 +375,11 @@
 @media (hover: none) {
   .cw-voice-library .cw-voice-favorite {
     opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cw-voice-loading-wave i,
+  .cw-voice-skeleton {
+    animation: none;
   }
 }

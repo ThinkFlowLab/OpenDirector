@@ -154,6 +154,23 @@ test("dynamic options and unknown task protocols cannot be guessed into a valid 
   );
 });
 
+test("face emphasis only accompanies the four-view preset", () => {
+  assert.deepEqual(
+    createCanvasToolTask("image-presets", [source.nodeId], {
+      preset: "four-view",
+      faceEmphasis: true,
+    }).parameters,
+    { preset: "four-view", faceEmphasis: true },
+  );
+  assert.deepEqual(
+    createCanvasToolTask("image-presets", [source.nodeId], {
+      preset: "three-view",
+      faceEmphasis: true,
+    }).parameters,
+    { preset: "three-view" },
+  );
+});
+
 test("observed marketing presets derive exact pixels while custom dimensions remain explicit", () => {
   const confirmed = { available: true, parametersConfirmed: true };
   for (const [aspectRatio, outputWidth, outputHeight] of [
@@ -400,5 +417,50 @@ test("adapter-supplied field labels and options are translated for display", () 
       fields: [{ key: "mode", label: "分离方式", type: "select" }],
     }).find((item) => item.key === "mode")!.label,
     "分离方式",
+  );
+});
+
+test("mask composite takes two video sources: the content, then its mask", () => {
+  const confirmed = { available: true, parametersConfirmed: true };
+  const clip = (nodeId: string): ToolSource => ({
+    nodeId,
+    kind: "video",
+    title: nodeId,
+    src: "data:video/mp4;base64,a",
+    mimeType: "video/mp4",
+    width: 64,
+    height: 36,
+    durationSeconds: 5,
+  });
+  const task = createCanvasToolTask("video-mask-composite", ["depth", "mask"], {
+    stretch: true,
+  });
+  assert.deepEqual(
+    validateToolTask(task, [clip("depth"), clip("mask")], confirmed),
+    [],
+  );
+  assert.ok(
+    validateToolTask(
+      createCanvasToolTask("video-mask-composite", ["depth"], {
+        stretch: true,
+      }),
+      [clip("depth")],
+      confirmed,
+    ).length > 0,
+  );
+  assert.ok(
+    validateToolTask(
+      createCanvasToolTask("video-mask-composite", ["depth", source.nodeId], {
+        stretch: true,
+      }),
+      [clip("depth"), source],
+      confirmed,
+    ).length > 0,
+  );
+  assert.deepEqual(
+    initialToolParameters(
+      CANVAS_TOOLS.find((tool) => tool.id === "video-matting")!,
+    ).background !== undefined,
+    true,
   );
 });

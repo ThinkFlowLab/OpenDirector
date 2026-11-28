@@ -21,8 +21,11 @@ def open_image(data: bytes) -> Image.Image:
     try:
         image = Image.open(io.BytesIO(data))
         image.load()
-    except (OSError, ValueError, Image.DecompressionBombError):
-        raise ProjectError('无法读取图片素材。', 422) from None
+    except (OSError, ValueError, EOFError, Image.DecompressionBombError):
+        raise ProjectError('无法读取图片素材。', 422, code='image_decode') from None
+    # A source profile for other channels cannot describe the converted RGB pixels.
+    if image.mode not in {'RGB', 'RGBA', 'P', 'PA'}:
+        image.info.pop('icc_profile', None)
     return ImageOps.exif_transpose(image).convert('RGBA')
 
 
@@ -237,6 +240,21 @@ def picture(source: Path, out: Path, *, width: int, height: int) -> Path:
     _run(['ffmpeg', '-v', 'error', '-y', '-i', str(source), '-vf', f'scale={width}:{height},setsar=1,format=yuv420p', '-an',
           _frame_sync_option(), 'passthrough', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', str(out)])
     return out
+
+
+def frames_of(source: Path, folder: Path, *, gray=False) -> list[Path]:
+    """Every decoded frame of source as a PNG, in order (grayscale when gray)."""
+    folder.mkdir()
+    _run(['ffmpeg', '-v', 'error', '-y', '-i', str(source), '-vf', 'format=gray' if gray else 'format=rgb24',
+          _frame_sync_option(), 'passthrough', '-compression_level', '1', str(folder / '%05d.png')])
+    return sorted(folder.glob('*.png'))
+
+
+def encode_frames(pattern: str, fps: float, out: Path) -> bytes:
+    """A silent H.264 clip from an image-sequence pattern."""
+    _run(['ffmpeg', '-v', 'error', '-y', '-framerate', f'{fps:.6f}', '-i', pattern, '-vf', 'format=yuv420p',
+          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '12', '-movflags', '+faststart', str(out)])
+    return out.read_bytes()
 
 
 def disparity(source: Path, out: Path, *, near: float, far: float) -> bytes:

@@ -55,6 +55,8 @@ const SETTINGS_KEYS = [
   "scoreMode",
   "durationFromReference",
   "imagePreset",
+  "faceEmphasis",
+  "imageQuality",
   "modelConfigId",
 ] as const;
 
@@ -108,7 +110,8 @@ export function isGenerationSettings(
     (value.videoMode === undefined ||
       value.videoMode === "reference" ||
       value.videoMode === "first-last" ||
-      value.videoMode === "continuation") &&
+      value.videoMode === "continuation" ||
+      value.videoMode === "control") &&
     (value.firstFrameNodeId === undefined ||
       nonempty(value.firstFrameNodeId)) &&
     (value.lastFrameNodeId === undefined || nonempty(value.lastFrameNodeId)) &&
@@ -140,8 +143,15 @@ export function isGenerationSettings(
     (value.durationFromReference === undefined ||
       typeof value.durationFromReference === "boolean") &&
     (value.imagePreset === undefined ||
-      value.imagePreset === "none" ||
-      value.imagePreset === "product-views") &&
+      (typeof value.imagePreset === "string" &&
+        /^[a-z0-9-]{1,40}$/.test(value.imagePreset))) &&
+    (value.faceEmphasis === undefined ||
+      typeof value.faceEmphasis === "boolean") &&
+    (value.imageQuality === undefined ||
+      value.imageQuality === "auto" ||
+      value.imageQuality === "low" ||
+      value.imageQuality === "medium" ||
+      value.imageQuality === "high") &&
     (value.modelConfigId === undefined || nonempty(value.modelConfigId))
   );
 }
@@ -266,7 +276,8 @@ export function timelineError(value: unknown): string | null {
       if (
         clip.resource.durationSeconds !== undefined &&
         clip.resource.kind !== "image" &&
-        clip.outPoint > clip.resource.durationSeconds + 0.000001
+        clip.outPoint >
+          clip.resource.durationSeconds + RULE_FACTS.timelineDurationEpsilon
       )
         return tNow("errors.data.timelineOutPoint");
       if (track.kind === "visual") {
@@ -621,7 +632,14 @@ export function parseNodeData(
           record(part) &&
           (part.type === "text"
             ? typeof part.text === "string"
-            : part.type === "reference" &&
+            : part.type === "skill"
+              ? nonempty(part.name) &&
+                part.name.length <= 255 &&
+                (part.preset === undefined ||
+                  (nonempty(part.preset) && part.preset.length <= 40)) &&
+                (part.faceEmphasis === undefined ||
+                  typeof part.faceEmphasis === "boolean")
+              : part.type === "reference" &&
               nonempty(part.assetId) &&
               nonempty(part.name) &&
               part.name.length <= 255 &&

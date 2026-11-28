@@ -71,6 +71,10 @@ async function setup(kind = "image") {
     locale: "zh-CN",
     viewport: { width: 1500, height: 1000 },
   });
+  // Skip the first-run model setup welcome; it covers the canvas.
+  await page.addInitScript(() =>
+    localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
+  );
   page.setDefaultTimeout(15000);
   page.on("pageerror", (e) => errors.push(e.message));
   const state = () => call(`/api/creation/projects/${id}`);
@@ -143,7 +147,11 @@ try {
           dark,
           light,
           enabled: [...element.querySelectorAll("button:enabled")]
-            .filter((button) => button.getClientRects().length)
+            .filter(
+              (button) =>
+                button.getClientRects().length &&
+                button.getAttribute("aria-disabled") !== "true",
+            )
             .map((button) => button.getAttribute("aria-label")),
         };
       });
@@ -151,6 +159,12 @@ try {
       assert.equal(locked.dark, "rgb(125, 130, 145)");
       assert.equal(locked.light, "rgb(123, 130, 144)");
       assert.deepEqual(locked.enabled, ["取消生成"]);
+      assert.equal(
+        await dock
+          .getByRole("button", { name: "提示词优化", exact: true })
+          .isDisabled(),
+        true,
+      );
       assert.equal((await state()).jobs.length, 0);
       hold.release();
       await until(async () => (await state()).jobs.length === 1);
@@ -397,6 +411,17 @@ try {
     await submit.click();
     await until(async () => (await state()).jobs[0]?.status === "succeeded");
     await overlay.waitFor({ state: "hidden" });
+    // Presentation changes must not wait for another execution event.
+    const completedJobs = (await state()).jobs;
+    await page.getByRole("button", { name: "生成历史", exact: true }).click();
+    await page.getByText("当前选用的生成结果", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "EN", exact: true }).click();
+    await page.getByText("Currently selected generation result", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "中文", exact: true }).click();
+    await page.getByText("当前选用的生成结果", { exact: true }).waitFor();
+    assert.deepEqual((await state()).jobs, completedJobs);
+    await page.getByRole("button", { name: "生成历史", exact: true }).click();
+    console.log("PASS history locale change: existing jobs translate without changing execution records");
     await page.getByRole("button", { name: "扩图", exact: true }).click();
     const editor = page.getByRole("region", {
       name: "扩图编辑器",

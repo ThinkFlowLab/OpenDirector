@@ -3,6 +3,7 @@ import { CanvasIcon } from "./CanvasIcon";
 import { ModelSettings } from "./ModelSettings";
 import { errorMessage } from "../backend/api";
 import type { BackendModels } from "../backend/models";
+import type { SettingsModelKind } from "./ModelServiceForm";
 import type { Theme, ThemeControls } from "./theme";
 import { useI18n, useT } from "../i18n/I18nProvider";
 import type { Locale } from "../i18n/types";
@@ -126,11 +127,13 @@ export function SettingsDialog({
   catalog,
   theme,
   initialCategory,
+  initialModelKind = null,
   onClose,
 }: {
   catalog: BackendModels;
   theme: ThemeControls;
   initialCategory: "general" | "models";
+  initialModelKind?: SettingsModelKind | null;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -230,7 +233,11 @@ export function SettingsDialog({
             {category === "general" ? (
               <GeneralSettings catalog={catalog} theme={theme} />
             ) : (
-              <ModelSettings catalog={catalog} onClose={onClose} />
+              <ModelSettings
+                catalog={catalog}
+                initialKind={initialModelKind}
+                onClose={onClose}
+              />
             )}
           </div>
         </section>

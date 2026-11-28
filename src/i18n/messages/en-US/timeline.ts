@@ -1,5 +1,11 @@
 /** Timeline editor, rendering, export and track labels. */
 export const timeline = {
+  "timeline.output.retry": "Retry output",
+  "timeline.output.title": "Output video",
+  "timeline.output.shortcut": "Output video · ⌘Enter / Ctrl+Enter",
+  "timeline.output.keepOpen": "Uses the saved timeline size and frame rate. Keep this page open while rendering.",
+  "timeline.output.publishing": "Adding video to canvas…",
+  "timeline.output.otherPending": "Finish or retry the other timeline output first.",
   "timeline.text.unsupportedExchange": "FCPXML and XML + media ZIP cannot retain text or fonts. Use an editable package to continue editing, or MP4 for the rendered video.",
   "timeline.player.sourceUnavailable": "The current media source is unavailable. Restore the source file and retry.",
   "timeline.package.export": "Export editable package",
@@ -113,6 +119,7 @@ export const timeline = {
   "timeline.track.delete": "Delete {title}",
   "timeline.track.muted": "Muted",
   "timeline.track.audible": "Audible",
+  "timeline.track.help": "Editing and export help",
   "timeline.track.dragHint":
     "Drag visual clips to reorder them; drag audio to change its start or move it to another audio track. Press Esc to cancel and ⌘/Ctrl + Z to undo. MP4 renders in the browser and preserves order, trims, speed, volume, and multi-track mixing; the picture is scaled to fit with black bars. Speed changes also change pitch. ⌘/Ctrl + wheel zooms the timeline at the pointer; snapping aligns clip edges and the playhead. FCPXML is a standard editing interchange format, and the ZIP contains the original media; after extraction, keep the media directory's relative path. This is not a native CapCut project and compatibility with every editor version is not promised. The JSON remains editable in this project.",
 

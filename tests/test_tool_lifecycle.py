@@ -18,6 +18,9 @@ from test_creation_tool_drafts import prepared
 from test_tool_tasks import project, configure, upload, png, H3
 
 
+pytestmark = pytest.mark.cpu
+
+
 async def until(predicate):
     async with asyncio.timeout(5):
         while not predicate():

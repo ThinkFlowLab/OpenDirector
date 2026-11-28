@@ -9,6 +9,9 @@ from opendirector.domain.projects import ProjectError
 from process_helpers import directory_link
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('component', ['.agents', '.agents/skills'])
 def test_reused_snapshot_rejects_reparse_directories_before_removal(tmp_path, monkeypatch, component):
     work = tmp_path / 'work'

@@ -11,12 +11,12 @@
 # measurement missing from a sample that otherwise parsed.
 # Matrix and policy are documented in docs/development/validation.md.
 #
-# Schedule: 0 18 * * * UTC = 02:00 Asia/Shanghai next day.
+# Schedule: 53 17 * * * UTC = 01:53 Asia/Shanghai next day. Avoid o'clocks due to high volume
 name: Nightly checks
 
 on:
   schedule:
-    - cron: '0 18 * * *'
+    - cron: '53 17 * * *'
   workflow_dispatch:
 
 permissions:
@@ -63,15 +63,15 @@ jobs:
       - id: suite
         continue-on-error: true
         name: Full Python suite
-        run: python -m pytest tests -q -ra
+        run: python -m pytest tests -m cpu -q -ra
       - name: Collect failed test ids
         if: steps.suite.outcome == 'failure'
-        run: python -m pytest --lf --collect-only -q 2>/dev/null | grep '::' > failed-tests.txt || true
+        run: python -m pytest -m cpu --lf --collect-only -q 2>/dev/null | grep '::' > failed-tests.txt || true
       - id: rerun
         if: steps.suite.outcome == 'failure'
         continue-on-error: true
         name: Rerun failed subset once
-        run: python -m pytest --lf -q -ra
+        run: python -m pytest -m cpu --lf -q -ra
       - id: classify
         if: always()
         name: Classify outcome and probe flaky watchlist
@@ -83,7 +83,7 @@ jobs:
           if [ "${#IDS[@]}" -gt 0 ]; then
             watchlist=""
             for run in 1 2 3; do
-              if python -m pytest "${IDS[@]}" -q -ra >"/tmp/watchlist-run$run.log" 2>&1; then
+              if python -m pytest "${IDS[@]}" -m cpu -q -ra >"/tmp/watchlist-run$run.log" 2>&1; then
                 watchlist="$watchlist run$run=pass"
               else
                 watchlist="$watchlist run$run=fail"
@@ -168,11 +168,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/extended-logs"
           fixture_api_pid=""
           fixture_web_pid=""
+          http_fixture_api_pid=""
+          http_fixture_web_pid=""
           python tests/browser/creation_server.py --port 8019 >"$RUNNER_TEMP/creation-server.log" 2>&1 &
           api_pid=$!
           OPENDIRECTOR_API_URL="$CREATION_API_URL" npm run dev -- --port 5179 --strictPort >"$RUNNER_TEMP/vite.log" 2>&1 &
           web_pid=$!
-          trap 'kill "$api_pid" "$web_pid" "$fixture_api_pid" "$fixture_web_pid" 2>/dev/null || true; wait 2>/dev/null || true' EXIT
+          trap 'kill "$api_pid" "$web_pid" "$fixture_api_pid" "$fixture_web_pid" "$http_fixture_api_pid" "$http_fixture_web_pid" 2>/dev/null || true; wait 2>/dev/null || true' EXIT
           for attempt in {1..60}; do
             if curl --silent --fail -H 'X-OpenDirector-Request: 1' "$CREATION_API_URL/api/creation-test-health" >/dev/null && curl --silent --fail "$CREATION_WEB_URL/" >/dev/null; then
               break
@@ -212,13 +214,42 @@ jobs:
           done
           curl --fail -H 'X-OpenDirector-Request: 1' http://127.0.0.1:8020/api/creation-test-health
           curl --silent --fail http://127.0.0.1:5180/ >/dev/null
+          CREATION_WEB_URL=http://127.0.0.1:5180 CREATION_API_URL=http://127.0.0.1:8020 node scripts/check-browser-manifest.mjs --lane extendedFixture
           fixture_scripts=()
           while IFS= read -r line; do fixture_scripts+=("$line"); done < <(
             node -e 'const m=require("./tests/browser/manifest.json");for(const s of m.scripts)if((s.lanes||[]).includes("extendedFixture"))console.log([s.file,...(s.args||[])].join(" "))'
           )
           for entry in "${fixture_scripts[@]}"; do
             log="$RUNNER_TEMP/extended-logs/${entry%.mjs}.log"
-            if node "tests/browser/$entry" >"$log" 2>&1; then
+            # These scripts read CREATION_WEB_URL. Point them at the fixture
+            # Vite server; the workflow env still names the regular :5179 dev server.
+            if CREATION_WEB_URL=http://127.0.0.1:5180 CREATION_API_URL=http://127.0.0.1:8020 node "tests/browser/$entry" >"$log" 2>&1; then
+              echo "pass $entry" >> extended-results.txt
+            else
+              echo "fail $entry" >> extended-results.txt
+              failed=1
+            fi
+          done
+          # These workflows exercise real HTTP adapters, so they cannot share
+          # the generic provider used by the existing fixture workflows.
+          python tests/browser/creation_server.py --port 8021 --http-generation-fixture --assistant-fixture >"$RUNNER_TEMP/http-creation-server.log" 2>&1 &
+          http_fixture_api_pid=$!
+          OPENDIRECTOR_API_URL=http://127.0.0.1:8021 npm run dev -- --port 5181 --strictPort >"$RUNNER_TEMP/http-vite.log" 2>&1 &
+          http_fixture_web_pid=$!
+          for attempt in {1..60}; do
+            if curl --silent --fail -H 'X-OpenDirector-Request: 1' http://127.0.0.1:8021/api/creation-test-health >/dev/null && curl --silent --fail http://127.0.0.1:5181/ >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          CREATION_WEB_URL=http://127.0.0.1:5181 CREATION_API_URL=http://127.0.0.1:8021 node scripts/check-browser-manifest.mjs --lane extendedHttpFixture
+          http_fixture_scripts=()
+          while IFS= read -r line; do http_fixture_scripts+=("$line"); done < <(
+            node -e 'const m=require("./tests/browser/manifest.json");for(const s of m.scripts)if((s.lanes||[]).includes("extendedHttpFixture"))console.log([s.file,...(s.args||[])].join(" "))'
+          )
+          for entry in "${http_fixture_scripts[@]}"; do
+            log="$RUNNER_TEMP/extended-logs/${entry%.mjs}.log"
+            if CREATION_WEB_URL=http://127.0.0.1:5181 CREATION_API_URL=http://127.0.0.1:8021 node "tests/browser/$entry" >"$log" 2>&1; then
               echo "pass $entry" >> extended-results.txt
             else
               echo "fail $entry" >> extended-results.txt
@@ -227,7 +258,7 @@ jobs:
           done
           cat extended-results.txt
           if [ "$failed" -ne 0 ]; then
-            for entry in "${scripts[@]}" "${fixture_scripts[@]}"; do
+            for entry in "${scripts[@]}" "${fixture_scripts[@]}" "${http_fixture_scripts[@]}"; do
               log="$RUNNER_TEMP/extended-logs/${entry%.mjs}.log"
               if grep -Fq "fail $entry" extended-results.txt; then
                 echo "===== $entry ====="
@@ -239,7 +270,7 @@ jobs:
       - name: Print isolated service logs on failure
         if: failure()
         run: |
-          for log in "$RUNNER_TEMP/creation-server.log" "$RUNNER_TEMP/vite.log" "$RUNNER_TEMP/assistant-creation-server.log" "$RUNNER_TEMP/assistant-vite.log"; do
+          for log in "$RUNNER_TEMP/creation-server.log" "$RUNNER_TEMP/vite.log" "$RUNNER_TEMP/assistant-creation-server.log" "$RUNNER_TEMP/assistant-vite.log" "$RUNNER_TEMP/http-creation-server.log" "$RUNNER_TEMP/http-vite.log"; do
             if [ -f "$log" ]; then tail -n 150 "$log"; fi
           done
       - name: Upload extended lane results
@@ -382,12 +413,15 @@ jobs:
           done
           curl --fail -H 'X-OpenDirector-Request: 1' "$CREATION_API_URL/api/creation-test-health"
           curl --silent --fail "$CREATION_WEB_URL/" >/dev/null
+          # One artifact directory: the report sits at its root, where
+          # daily-benchmark reads nightly-perf/nightly-perf.json (#299).
+          mkdir -p nightly-perf/profiles
           node tests/browser/mp4_render_probe.mjs > /tmp/render-probe.json
           PROFILE_LABEL="nightly-${GITHUB_SHA::7}" node tests/browser/reference_drag_performance.mjs > /tmp/drag-perf.json
           jq -n --arg sha "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
             --argjson render "$(cat /tmp/render-probe.json)" \
             --argjson drag "$(cat /tmp/drag-perf.json)" \
-            '{sha: $sha, runId: ($run | tonumber), render: $render, drag: $drag}' > nightly-perf.json
+            '{sha: $sha, runId: ($run | tonumber), render: $render, drag: $drag}' > nightly-perf/nightly-perf.json
           {
             echo "## Render output verification"
             echo ""
@@ -407,14 +441,22 @@ jobs:
           for log in "$RUNNER_TEMP/creation-server.log" "$RUNNER_TEMP/vite.log"; do
             if [ -f "$log" ]; then tail -n 150 "$log"; fi
           done
+      - name: Stage drag profiles beside the report
+        # upload-artifact roots the archive at the common ancestor of its
+        # paths; mixing the workspace report with /tmp profiles made that `/`
+        # and buried the report under home/runner/... (#299).
+        if: always()
+        run: |
+          mkdir -p nightly-perf/profiles
+          for profile in /tmp/opendirector-drag-nightly-*.cpuprofile; do
+            if [ -f "$profile" ]; then cp "$profile" nightly-perf/profiles/; fi
+          done
       - name: Upload perf and output report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nightly-perf
-          path: |
-            nightly-perf.json
-            /tmp/opendirector-drag-nightly-*.cpuprofile
+          path: nightly-perf/
           if-no-files-found: ignore
 
   # Lane 6: fixed comparable benchmark, after this run's perf sample exists.

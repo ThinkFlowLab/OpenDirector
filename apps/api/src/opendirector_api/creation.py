@@ -26,6 +26,7 @@ from opendirector.domain.creation.base import MediaKind
 from opendirector.domain.creation.commands import Command, CommandReceipt, Query as CreationQuery
 from opendirector.domain.creation.project import ProjectSnapshot, ViewState
 from opendirector.domain.projects import ProjectError
+from opendirector.application.prompt_optimization import PromptOptimizationInput
 from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.media.fonts import MAX_FONT_BYTES, inspect_font
@@ -59,7 +60,26 @@ class TemporaryPackageResponse(FileResponse):
             Path(self.path).unlink(missing_ok=True)
 
 
-def creation_routes(projects: CreationProjects, generation=None):
+async def preview_until_disconnect(request: Request, operation):
+    async def disconnected():
+        # FastAPI has consumed the body. Read ASGI events directly so this
+        # also works through BaseHTTPMiddleware's receive stream.
+        while (await request.receive())['type'] != 'http.disconnect':
+            pass
+
+    work = asyncio.create_task(operation)
+    disconnect = asyncio.create_task(disconnected())
+    try:
+        done, _ = await asyncio.wait((work, disconnect), return_when=asyncio.FIRST_COMPLETED)
+        return await work if work in done else Response(status_code=499)
+    finally:
+        for task in (work, disconnect):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(work, disconnect, return_exceptions=True)
+
+
+def creation_routes(projects: CreationProjects, generation=None, prompt_optimization=None):
     router = APIRouter(prefix='/api/creation', tags=['Unified creation projects'])
     assets = CreationAssets(projects)
     canvas = CreationCanvas(projects)
@@ -81,6 +101,13 @@ def creation_routes(projects: CreationProjects, generation=None):
         response.headers['Cache-Control'] = 'no-store'
         return await run_in_threadpool(preview_font_coverage, bytes(value))
 
+    if prompt_optimization is not None:
+        @router.post('/projects/{project_id}/items/{item_id}/optimize-prompt')
+        async def optimize_prompt(project_id: UUID, item_id: UUID, value: PromptOptimizationInput, request: Request):
+            return await preview_until_disconnect(request, prompt_optimization.rewrite(
+                project_id, item_id, value.prompt, value.inlineReferences,
+                value.preferredModelId, value.assistantModel))
+
     @router.get('/projects')
     def list_projects():
         return projects.list_projects()
@@ -100,17 +127,36 @@ def creation_routes(projects: CreationProjects, generation=None):
         return projects.snapshot(project_id)
 
     @router.post('/projects/{project_id}/open', response_model=ProjectSnapshot)
-    def open_project(project_id: UUID, x_opendirector_session: UUID = Header()):
+    def open_project(project_id: UUID, x_opendirector_session: UUID = Header(),
+                     x_opendirector_persistent: bool = Header(default=False)):
+        if x_opendirector_persistent:
+            return projects.open(project_id, str(x_opendirector_session), persistent=True)
         return projects.open(project_id, str(x_opendirector_session))
 
     @router.post('/projects/{project_id}/open-canvas')
-    def open_project_canvas(project_id: UUID, x_opendirector_session: UUID = Header()):
-        # The canvas needs its reference edges on first render too. Reuse the
+    def open_project_canvas(project_id: UUID, x_opendirector_session: UUID = Header(),
+                            x_opendirector_allow_preview: bool = Header(default=False)):
+        # The canvas needs its reference edges and text on first render too. Reuse the
         # single snapshot this open read already published instead of making the
         # page read the same project again through GET /canvas. The no-flag
         # route above still returns a bare ProjectSnapshot.
-        snapshot = projects.open(project_id, str(x_opendirector_session))
-        return {'snapshot': snapshot, 'edges': canvas.reference_edges(project_id, snapshot)}
+        session = str(x_opendirector_session)
+        editing = {}
+        if x_opendirector_allow_preview:
+            snapshot, state = projects.open_canvas(project_id, session, allow_preview=True)
+            editing['editing'] = state
+        else:
+            snapshot = projects.open(project_id, session)
+        return {'snapshot': snapshot, 'edges': canvas.reference_edges(project_id, snapshot),
+                'texts': canvas.text_contents(snapshot), **editing}
+
+    @router.get('/projects/{project_id}/edit-session')
+    def edit_session(project_id: UUID, x_opendirector_session: UUID = Header()):
+        return projects.editing_state(project_id, str(x_opendirector_session))
+
+    @router.post('/projects/{project_id}/edit-session')
+    def take_edit_ownership(project_id: UUID, x_opendirector_session: UUID = Header()):
+        return projects.take_edit_ownership(project_id, str(x_opendirector_session))
 
     @router.put('/sessions/{session_id}')
     def heartbeat(session_id: UUID, value: Session):
@@ -314,6 +360,15 @@ def creation_routes(projects: CreationProjects, generation=None):
         value, asset = assets.thumbnail(project_id, asset_id)
         return Response(value, media_type='image/webp', headers={
             'Cache-Control': 'private, no-cache', 'ETag': '"thumbnail-' + asset.fingerprint + '"',
+            'X-Content-Type-Options': 'nosniff'})
+
+    @router.get('/projects/{project_id}/assets/{asset_id}/browser-image')
+    def browser_image(project_id: UUID, asset_id: UUID,
+                      if_none_match: str | None = Header(default=None, alias='If-None-Match')):
+        match = re.fullmatch(r'"browser-image-v2-(sha256:[0-9a-f]{64})"', if_none_match or '')
+        value, asset = assets.browser_image(project_id, asset_id, known_fingerprint=match[1] if match else None)
+        return Response(value, status_code=304 if value is None else 200, media_type='image/png', headers={
+            'Cache-Control': 'private, no-cache', 'ETag': '"browser-image-v2-' + asset.fingerprint + '"',
             'X-Content-Type-Options': 'nosniff'})
 
     @router.get('/projects/{project_id}/assets/{asset_id}/content')

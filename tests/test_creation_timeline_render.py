@@ -13,8 +13,11 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, send, ver
 
 
-def clip(seconds=2, size='64x64'):
-    return subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', f'color=blue:s={size}:r=24',
+pytestmark = pytest.mark.cpu
+
+
+def clip(seconds=2, size='64x64', color='blue'):
+    return subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', f'color={color}:s={size}:r=24',
         '-t', str(seconds), '-threads', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
         '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1'], check=True, capture_output=True).stdout
 
@@ -107,6 +110,52 @@ def test_timeline_rejects_clip_beyond_actual_duration_even_when_client_claims_lo
     receipt = send(store, pid, 'editor.save', session=session, versions=versions, document=document)
     assert receipt.status == 'rejected'
     assert store.snapshot(pid) == before
+
+
+def test_timeline_accepts_a_clip_rounded_to_the_nearest_millisecond(project):
+    """Durations also travel as whole milliseconds, so a clip seeded from that
+    rounded value can sit up to half a millisecond past the measured one. A
+    121-frame clip at 24 fps lasts 5.041667s and is announced as 5042ms, which is
+    5.042s; re-probing the same file on import finds 5.041667 again. The shared
+    tolerance has to cover the rounding, or every import of such a clip fails."""
+    from opendirector.domain.rule_facts import TIMELINE_DURATION_EPSILON
+    measured, rounded = 5.041667, 5.042
+    assert rounded - measured <= TIMELINE_DURATION_EPSILON
+
+    store, pid, session = project
+    _, _, versions, _ = prepared(project)
+    document = store.snapshot(pid).editorDocuments[0].model_dump(mode='json')
+    source = document['data']['tracks'][0]['clips'][0]
+    # The fixture imports a whole second of video, so shift the clip by the same
+    # kind of rounding instead of inventing a new asset.
+    source['outPoint'] = 4.000333
+    source['resource']['durationSeconds'] = 4.000333
+    receipt = send(store, pid, 'editor.save', session=session, versions=versions, document=document)
+    assert receipt.status == 'applied', receipt
+
+
+def test_timeline_skips_the_duration_check_when_the_asset_was_never_measured(project, monkeypatch):
+    """A probe that cannot report a duration says nothing about overflow. The
+    document boundary and the aggregate validation already skip the comparison
+    in that case, so the timeline gate must agree instead of rejecting a
+    document the client accepted."""
+    from opendirector.application.creation_assets import CreationAssets
+
+    store, pid, session = project
+    _, _, versions, _ = prepared(project)
+    document = store.snapshot(pid).editorDocuments[0].model_dump(mode='json')
+    document['data']['tracks'][0]['clips'][0]['resource']['title'] = 'Source again'
+
+    original = CreationAssets._reference.__func__
+
+    def unmeasured(assets, snapshot, reference):
+        asset = original(assets, snapshot, reference)
+        return asset.model_copy(update={'metadata': asset.metadata.model_copy(
+            update={'durationSeconds': None})})
+
+    monkeypatch.setattr(CreationAssets, '_reference', classmethod(unmeasured))
+    receipt = send(store, pid, 'editor.save', session=session, versions=versions, document=document)
+    assert receipt.status == 'applied', receipt
 
 
 def prepared_text(project, tmp_path, *, pure_text=False, output_seconds=3):
@@ -249,3 +298,62 @@ def test_atomic_text_save_and_publication_is_rejected_before_it_can_change_rende
         ])
     assert store.snapshot(pid) == before
     assert next(a for a in before.assets if a.id == output.id).provenance.source == 'upload'
+
+
+@pytest.mark.parametrize('actor', ['ui', 'agent'])
+def test_repeat_render_keeps_output_identity_and_versions(project, actor):
+    from opendirector.application.creation_history import CreationHistory
+    from opendirector.domain.creation.commands import parse_command
+    store, pid, session = project
+    _, first, versions, payload = prepared(project)
+    assert send(store, pid, 'timeline.publishRender', session=session, versions=versions, **payload).status == 'applied'
+    before = store.snapshot(pid)
+    target = before.canvasItems[-1]
+    record = CreationToolAssets(store).import_file(pid, uuid4(), 'second-render.mp4', clip(color='red'), session,
+                                                  provenance=AssetProvenance(source='upload'))
+    second = CreationToolAssets(store).assets.get(pid, record['id'])
+    source, editor = before.canvasItems[0], before.editorDocuments[0]
+    command = parse_command(dict(commandId=uuid4(), projectId=pid, type='timeline.publishRender',
+        expectedVersions=[ver('canvas_item', source), ver('editor_document', editor), ver('asset', second), ver('canvas_item', target)],
+        payload={**payload, 'asset': asset_ref(second), 'expectedOutputRevision': target.revision}))
+    receipt = store.execute(command, session=session, source=actor)
+    assert receipt.status == 'applied', receipt
+    snapshot = store.snapshot(pid)
+    outputs = [item for item in snapshot.canvasItems if item.kind == 'video']
+    assert len(outputs) == 1
+    assert outputs[0].id == target.id
+    assert outputs[0].binding.objectRef.assetId == second.id
+    assert outputs[0].revision == target.revision + 1
+    assert outputs[0].position == target.position
+    assert snapshot.assets[-1].provenance.sourceItemId == source.id
+    history = CreationHistory(store)
+    listing = history.node_versions(pid, target.id)
+    assert {row['asset'].id for row in listing['versions']} == {first.id, second.id}
+    assert CreationProjects(LocalProjects(store.local.repository)).snapshot(pid) == snapshot
+    assert store.execute(command, session=session, source=actor) == receipt
+
+    restored = send(store, pid, 'canvas.applyVersion', session=session,
+                    versions=listing['expectedVersions'], itemId=target.id, asset=asset_ref(first))
+    assert restored.status == 'applied', restored
+    assert store.snapshot(pid).canvasItems[-1].binding.objectRef.assetId == first.id
+
+
+@pytest.mark.parametrize('change', ['locked', 'stale'])
+def test_repeat_render_respects_output_lock_and_revision(project, change):
+    store, pid, session = project
+    _, _, versions, payload = prepared(project)
+    assert send(store, pid, 'timeline.publishRender', session=session, versions=versions, **payload).status == 'applied'
+    target = store.snapshot(pid).canvasItems[-1]
+    record = CreationToolAssets(store).import_file(pid, uuid4(), 'next-render.mp4', clip(color='red'), session,
+                                                  provenance=AssetProvenance(source='upload'))
+    output = CreationToolAssets(store).assets.get(pid, record['id'])
+    assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', target)],
+                itemId=target.id, **({'locked': True} if change == 'locked' else {'title': 'Renamed'})).status == 'applied'
+    snapshot = store.snapshot(pid)
+    expected = snapshot.canvasItems[-1] if change == 'locked' else target
+    receipt = send(store, pid, 'timeline.publishRender', session=session,
+        versions=[ver('canvas_item', snapshot.canvasItems[0]), ver('editor_document', snapshot.editorDocuments[0]),
+                  ver('asset', output), ver('canvas_item', expected)],
+        **{**payload, 'asset': asset_ref(output), 'expectedOutputRevision': expected.revision})
+    assert receipt.status == 'rejected'
+    assert store.snapshot(pid) == snapshot

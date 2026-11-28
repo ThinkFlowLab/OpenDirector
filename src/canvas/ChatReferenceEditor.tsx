@@ -33,9 +33,12 @@ import {
   type Caret,
 } from "./chatReferenceDOM.ts";
 import { referenceInsertion } from "./chatReferenceInsertion.ts";
+import { presetPart, withoutPresetParts, withPresetPart } from "./promptSkill.ts";
 import type { ReferenceRules } from "./chatReferenceInsertion.ts";
 import {
+  isCaretNavigationKey,
   mentionCategories,
+  mentionDismissAfterEvent,
   mentionRange,
   slashRange,
   REFERENCE_CATEGORIES,
@@ -46,9 +49,15 @@ import "./reference-mentions.css";
 import { assetDisplayName } from "./assetNames.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
+import { AssetMedia } from "./useAssetMedia.tsx";
+import { parseAssetSource } from "../backend/assetSource.ts";
+import { resolveMediaSource } from "../backend/creationClient.ts";
 
 export interface ChatReferenceEditorHandle {
   focus: () => void;
+  replaceText: (text: string) => void;
+  /** One undoable replacement, also used while the editor is read-only. */
+  replace: (content: ReferenceContent) => boolean;
   openPicker: () => void;
   setSkill: (name: string | null, fromSlash?: boolean) => void;
   caret: () => Caret;
@@ -79,6 +88,17 @@ interface Props {
   onPasteFiles: (files: File[]) => void;
   onConfirmPending?: (caret: Caret) => void;
   onSlashChange?: (query: string | null) => void;
+  /** Summary drawn after a preset chip while the prompt has no words yet. */
+  presetNote?: string;
+  /** Whether the preset offers its alternate framing. */
+  presetTunable?: boolean;
+  presetLabel?: string;
+  presetTuneOpen?: boolean;
+  onPresetAction?: (
+    action: "prompt" | "tune",
+    element: HTMLElement,
+    preset: string,
+  ) => void;
   skillsEnabled?: boolean;
   label?: string;
   placeholder?: string;
@@ -111,6 +131,15 @@ const CATEGORY_LABELS: Record<ReferenceCategory, MessageKey> = {
   subject: "assistant.kind.subject",
 };
 
+function presetPlaceholder(text: string) {
+  const note = document.createElement("span");
+  note.className = "cw-chat-preset-note";
+  note.dataset.presetNote = text;
+  // Give the caret a real editable position before the generated hint.
+  note.textContent = "\u200b";
+  return note;
+}
+
 /** OpenDirector's atomic content model: one reference is one editing position. */
 export function ChatReferenceEditor({
   scope,
@@ -129,6 +158,11 @@ export function ChatReferenceEditor({
   onPasteFiles,
   onConfirmPending,
   onSlashChange,
+  presetNote,
+  presetTunable,
+  presetLabel,
+  presetTuneOpen,
+  onPresetAction,
   skillsEnabled = false,
   label: labelProp,
   placeholder: placeholderProp,
@@ -159,7 +193,10 @@ export function ChatReferenceEditor({
     choosing = useRef(false),
     alive = useRef(true);
   const preparation = useRef<AbortController | null>(null),
-    dismissed = useRef<number | null>(null);
+    dismissed = useRef<number | null>(null),
+    leftSinceDismiss = useRef(false),
+    pendingCaretNav = useRef(false),
+    explicitPicker = useRef(false);
   const [range, setRange] = useState<Caret | null>(null),
     rangeRef = useRef(range);
   rangeRef.current = range;
@@ -167,8 +204,8 @@ export function ChatReferenceEditor({
     [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
-  const latest = useRef({onChange, onChoose, onOpen, assets, previews, visibleReferenceNodeIds, onSlashChange});
-  latest.current = {onChange, onChoose, onOpen, assets, previews, visibleReferenceNodeIds, onSlashChange};
+  const latest = useRef({onChange, onChoose, onOpen, assets, previews, visibleReferenceNodeIds, onSlashChange, presetNote, presetTunable, presetLabel, presetTuneOpen, onPresetAction});
+  latest.current = {onChange, onChoose, onOpen, assets, previews, visibleReferenceNodeIds, onSlashChange, presetNote, presetTunable, presetLabel, presetTuneOpen, onPresetAction};
   const listId = useId();
   const categories = mentionCategories(options);
   const effectiveCategory = categories.includes(category) ? category : "all";
@@ -181,7 +218,10 @@ export function ChatReferenceEditor({
     (root.current && selection(root.current)) || saved.current;
   function close() {
     preparation.current?.abort();
+    explicitPicker.current = false;
     dismissed.current = rangeRef.current?.start ?? null;
+    leftSinceDismiss.current = false;
+    pendingCaretNav.current = false;
     rangeRef.current = null;
     setRange(null);
   }
@@ -238,10 +278,20 @@ export function ChatReferenceEditor({
         chip.querySelector("img")?.remove();
         if (src) {
           const img = document.createElement("img");
-          img.src = src;
           img.alt = "";
           img.draggable = false;
-          chip.prepend(img);
+          const place = (url: string) => {
+            if (latest.current.previews[part.assetId] !== src) return;
+            img.src = url;
+            chip.querySelector("img")?.remove();
+            chip.prepend(img);
+          };
+          if (parseAssetSource(src))
+            void resolveMediaSource(src).then(place, () => {
+              chip.querySelector<HTMLElement>("[data-reference-icon]")!.hidden =
+                false;
+            });
+          else place(src);
         }
         const icon = chip.querySelector<HTMLElement>("[data-reference-icon]")!;
         icon.hidden = !!src;
@@ -260,7 +310,49 @@ export function ChatReferenceEditor({
     for (const part of blank ? [] : content) {
       if (part.type === "text")
         fragment.append(document.createTextNode(part.text));
-      else if (part.type === "skill") {
+      else if (part.type === "skill" && part.preset) {
+        const previous = root.current.querySelector<HTMLElement>("[data-preset]");
+        const chip = previous?.dataset.preset === part.preset ? previous : document.createElement("span");
+        chip.contentEditable = "false";
+        chip.className = "cw-chat-reference cw-chat-preset";
+        chip.dataset.preset = part.preset;
+        chip.dataset.label = part.name;
+        if (part.faceEmphasis) chip.dataset.faceEmphasis = "1";
+        else delete chip.dataset.faceEmphasis;
+        let label = chip.querySelector<HTMLButtonElement>(".cw-chat-preset-label");
+        if (!label) {
+          const icon = document.createElement("span");
+          icon.dataset.referenceIcon = "1";
+          icon.className = "cw-chat-preset-icon";
+          icon.setAttribute("aria-hidden", "true");
+          const template = iconTemplates.current?.querySelector('[data-kind="image"]');
+          if (template) icon.append(template.cloneNode(true));
+          label = document.createElement("button");
+          label.type = "button";
+          label.className = "cw-chat-reference-label cw-chat-preset-label";
+          chip.append(icon, label);
+        }
+        label.textContent = latest.current.presetLabel ?? part.name;
+        let tune = chip.querySelector<HTMLButtonElement>("[data-preset-tune]");
+        if (latest.current.presetTunable) {
+          if (!tune) {
+            tune = document.createElement("button");
+            tune.type = "button";
+            tune.className = "cw-chat-preset-tune";
+            tune.dataset.presetTune = "1";
+            const template = iconTemplates.current?.querySelector('[data-kind="sliders"]');
+            if (template) tune.append(template.cloneNode(true));
+            chip.append(tune);
+          }
+          tune.setAttribute("aria-label", t("generation.preset.tune"));
+          tune.title = t("generation.preset.tune");
+          tune.setAttribute("aria-haspopup", "dialog");
+          tune.setAttribute("aria-expanded", String(Boolean(latest.current.presetTuneOpen)));
+        } else tune?.remove();
+        fragment.append(chip);
+        if (latest.current.presetNote)
+          fragment.append(presetPlaceholder(latest.current.presetNote));
+      } else if (part.type === "skill") {
         const chip = document.createElement("span");
         chip.contentEditable = "false";
         chip.dataset.skill = part.name;
@@ -297,6 +389,14 @@ export function ChatReferenceEditor({
     if (!root.current) return;
     root.current.focus({ preventScroll: true });
     select(root.current, at);
+  }
+  function placeCaretAfterPreset() {
+    if (disabled || busy || composing.current || !root.current ||
+        !latest.current.presetNote || !presetPart(current.current)) return false;
+    const afterChip = { start: 1, end: 1 };
+    saved.current = afterChip;
+    focus(afterChip);
+    return true;
   }
   function publish(
     content: ReferenceContent,
@@ -390,20 +490,37 @@ export function ChatReferenceEditor({
     if (referencesDisabled) return;
     const next = mentionRange(editingText(current.current), at.start, at.end);
     if (!next) {
+      // The connected-reference button opens the picker with no "@" in the
+      // text. A focus selectionchange must not immediately close that picker.
+      if (explicitPicker.current) return;
       dismissed.current = null;
+      leftSinceDismiss.current = false;
       rangeRef.current = null;
       setRange(null);
-    } else if (dismissed.current !== next.start) open(next);
+    } else {
+      const decision = mentionDismissAfterEvent(
+        dismissed.current,
+        leftSinceDismiss.current,
+        next.start,
+      );
+      dismissed.current = decision.dismissedStart;
+      leftSinceDismiss.current = decision.leftSinceDismiss;
+      if (decision.open) open(next);
+    }
   }
   useEffect(() => {
     function selectionChanged() {
       if (!root.current || document.activeElement !== root.current) return;
       const at = selection(root.current);
+      if (!at) return;
       if (
-        at &&
-        (at.start !== saved.current.start || at.end !== saved.current.end)
-      )
+        pendingCaretNav.current ||
+        at.start !== saved.current.start ||
+        at.end !== saved.current.end
+      ) {
+        pendingCaretNav.current = false;
         updateMention();
+      }
     }
     // selectionchange runs after the browser moves its native caret. A
     // microtask from keydown still sees the previous position in Chromium.
@@ -533,7 +650,21 @@ export function ChatReferenceEditor({
   }
   function input() {
     if (!root.current || composing.current || choosing.current) return;
-    publish(readDOM(root.current), caret(), false, true);
+    const content = readDOM(root.current);
+    const at = caret();
+    const preset = presetPart(content);
+    if (preset && content[0] !== preset) {
+      // Browsers can insert before the leading chip. Move it back to the
+      // front and preserve the user's editing position in the typed text.
+      const presetOffset = editingText(content.slice(0, content.indexOf(preset))).length;
+      const moveCaret = (position: number) => position <= presetOffset ? position + 1 : position;
+      publish(withPresetPart(content, preset), {
+        start: moveCaret(at.start),
+        end: moveCaret(at.end),
+      }, true, true);
+    } else {
+      publish(content, at, false, true);
+    }
     updateMention();
   }
   function removeReference(direction: "backward" | "forward") {
@@ -558,6 +689,23 @@ export function ChatReferenceEditor({
   useImperativeHandle(ref, () => ({
     focus,
     caret,
+    replaceText: (text) => {
+      if (disabled || composing.current || choosing.current) return;
+      const tokens = current.current.filter(part => part.type !== "text");
+      const content: ReferenceContent = [...tokens, { type: "text", text: tokens.length ? "\n" + text : text }];
+      const end = editingText(content).length;
+      const at = { start: end, end };
+      if (!publish(content, at)) return;
+      close();
+      focus(at);
+      updateMention();
+    },
+    replace: (content) => {
+      if (composing.current || choosing.current) return false;
+      const end = editingText(content).length;
+      close();
+      return publish(content, { start: end, end });
+    },
     setSkill: (name, fromSlash = false) => {
       if (disabled || !skillsEnabled) return;
       const range = fromSlash ? slash.current : caret();
@@ -609,6 +757,7 @@ export function ChatReferenceEditor({
         focus();
       } else {
         dismissed.current = null;
+        explicitPicker.current = true;
         open(caret());
         focus();
       }
@@ -629,6 +778,15 @@ export function ChatReferenceEditor({
             ...snapshot,
             content: currentReferences(snapshot.content, assets),
           }));
+      } else if (
+        value.filter((part) => part.type === "text").map((part) => part.text).join("") ===
+        current.current.filter((part) => part.type === "text").map((part) => part.text).join("")
+      ) {
+        // A chip removal arrives as a new value after the canvas command.
+        // Keep that previous content so Ctrl+Z in the prompt restores it.
+        past.current.push({ content: current.current, caret: saved.current });
+        if (past.current.length > 100) past.current.shift();
+        future.current = [];
       } else {
         past.current = [];
         future.current = [];
@@ -644,6 +802,28 @@ export function ChatReferenceEditor({
     visibleReferenceNodeIds,
     t,
   ]);
+  useLayoutEffect(() => {
+    if (
+      !root.current ||
+      !current.current.some((part) => part.type === "skill" && part.preset)
+    )
+      return;
+    paint(current.current, document.activeElement === root.current ? caret() : undefined);
+  }, [presetLabel, presetTunable, t]);
+  useLayoutEffect(() => {
+    const chip = root.current?.querySelector("[data-preset]");
+    const note = root.current?.querySelector<HTMLElement>(".cw-chat-preset-note");
+    if (presetNote && chip) {
+      if (note) note.dataset.presetNote = presetNote;
+      else chip.after(presetPlaceholder(presetNote));
+    } else if (note) {
+      delete note.dataset.presetNote;
+    }
+  }, [presetNote]);
+  useLayoutEffect(() => {
+    root.current?.querySelector("[data-preset-tune]")
+      ?.setAttribute("aria-expanded", String(Boolean(presetTuneOpen)));
+  }, [presetTuneOpen]);
   useLayoutEffect(() => {
     if (!autoGrow || !root.current) return;
     const element = root.current;
@@ -777,10 +957,11 @@ export function ChatReferenceEditor({
       [],
     );
     event.preventDefault();
-    event.clipboardData.setData("text/plain", contentText(selected, false, t));
+    const content = withoutPresetParts(selected);
+    event.clipboardData.setData("text/plain", contentText(content, false, t));
     event.clipboardData.setData(
       CLIPBOARD,
-      JSON.stringify({ scope, content: selected }),
+      JSON.stringify({ scope, content }),
     );
     if (cut)
       publish(editContent(current.current, at, []), {
@@ -794,6 +975,7 @@ export function ChatReferenceEditor({
         {["image", "video", "audio", "text", "subject"].map((kind) => (
           <CanvasIcon key={kind} name={kind} data-kind={kind} size={20} />
         ))}
+        <CanvasIcon name="sliders" data-kind="sliders" size={14} />
       </span>
       <div
         ref={root}
@@ -819,14 +1001,19 @@ export function ChatReferenceEditor({
           close();
           // Uncommitted IME text is already drawn in the editor; the empty
           // prompt must not stay behind it.
-          if (root.current) root.current.dataset.empty = "false";
+          if (root.current) {
+            root.current.dataset.empty = "false";
+            root.current.dataset.composing = "true";
+          }
         }}
         onCompositionEnd={() => {
           composing.current = false;
+          if (root.current) delete root.current.dataset.composing;
           input();
         }}
         onInput={input}
-        onFocus={() => {
+        onFocus={(event) => {
+          if (event.target === event.currentTarget) placeCaretAfterPreset();
           updateMention();
         }}
         onPointerUp={() => {
@@ -836,7 +1023,34 @@ export function ChatReferenceEditor({
         onBlur={() => {
           if (!choosing.current) close();
         }}
-        onClick={() => {
+        onMouseDown={(event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          // Preserve focus when pressing a preset control.
+          if (target?.closest("[data-preset]")) {
+            event.preventDefault();
+            return;
+          }
+          // Cancel native caret placement while the button is held over the hint.
+          if (event.button === 0 && !event.defaultPrevented &&
+              !target?.closest("[data-reference]") && placeCaretAfterPreset()) {
+            event.preventDefault();
+          }
+        }}
+        onClick={(event) => {
+          const target = event.target as HTMLElement | null;
+          const chip = target?.closest?.<HTMLElement>("[data-preset]");
+          if (chip && latest.current.onPresetAction) {
+            event.preventDefault();
+            if (disabled || busy) return;
+            const tune = target?.closest<HTMLElement>("[data-preset-tune]");
+            latest.current.onPresetAction(
+              tune ? "tune" : "prompt",
+              tune ?? chip,
+              chip.dataset.preset ?? "",
+            );
+            return;
+          }
+          if (!target?.closest?.("[data-reference]")) placeCaretAfterPreset();
           if (onConfirmPending && !disabled && !busy && !composing.current)
             onConfirmPending(caret());
         }}
@@ -877,6 +1091,7 @@ export function ChatReferenceEditor({
             event.preventDefault();
         }}
         onKeyDown={(event) => {
+          if (event.target instanceof HTMLElement && event.target.closest(".cw-chat-preset button")) return;
           if (event.key === "Escape" && busy) {
             event.preventDefault();
             event.stopPropagation();
@@ -893,6 +1108,14 @@ export function ChatReferenceEditor({
           if (disabled || busy) {
             event.preventDefault();
             return;
+          }
+          if (
+            !range &&
+            dismissed.current !== null &&
+            isCaretNavigationKey(event.key)
+          ) {
+            leftSinceDismiss.current = true;
+            pendingCaretNav.current = true;
           }
           if (
             (event.ctrlKey || event.metaKey) &&
@@ -966,6 +1189,18 @@ export function ChatReferenceEditor({
                 { start: end, end },
               );
             }
+          }
+        }}
+        onKeyUp={(event) => {
+          if (
+            pendingCaretNav.current &&
+            isCaretNavigationKey(
+              event.key,
+              composing.current || event.nativeEvent.isComposing,
+            )
+          ) {
+            pendingCaretNav.current = false;
+            updateMention();
           }
         }}
         onCopy={(event) => clipboard(event, false)}
@@ -1113,7 +1348,7 @@ export function ChatReferenceEditor({
                   >
                     <span className="cw-reference-mention-thumbnail">
                       {option.thumbnail ? (
-                        <img src={option.thumbnail} alt="" draggable={false} />
+                        <AssetMedia as="img" src={option.thumbnail} alt="" draggable={false} />
                       ) : (
                         <CanvasIcon name={option.kind} size={22} />
                       )}

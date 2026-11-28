@@ -12,6 +12,7 @@ const browser = await chromium.launch({
   args: ["--no-sandbox"],
 });
 const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1500, height: 1000 } });
+// Skip the first-run model setup welcome; it covers the canvas.
 await page.addInitScript(() => {
   localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
   localStorage.setItem("opendirector.locale.v1", "zh-CN");

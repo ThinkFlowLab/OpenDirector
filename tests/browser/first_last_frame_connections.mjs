@@ -193,6 +193,19 @@ try {
     (value) => value === images[1],
     "last frame after reload",
   );
+  await node(videoId).locator(".cw-node-title").click({ button: "right" });
+  await page.getByText("复制副本", { exact: true }).click();
+  const duplicated = await until(
+    snapshot,
+    (value) => value.references.filter((ref) => ref.active).length === 4,
+    "duplicate retained both frame inputs",
+  );
+  for (const [index, role] of ["first_frame", "last_frame"].entries()) {
+    const copied = duplicated.references.find((ref) =>
+      ref.active && ref.role === role &&
+      !saved.references.some((original) => original.id === ref.id));
+    assert.equal(copied?.source.id, images[index]);
+  }
   assert.deepEqual(errors, []);
   console.log("first/last frame connections ok");
 } catch (error) {

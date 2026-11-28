@@ -1009,6 +1009,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -1188,6 +1202,19 @@
             "default": null,
             "description": "Whether reference music supplies melody or full accompaniment.",
             "title": "Scoremode"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Random seed fixed when the job was accepted.",
+            "title": "Seed"
           }
         },
         "required": [
@@ -1417,6 +1444,30 @@
         "title": "AudioParameters",
         "type": "object"
       },
+      "AvailabilityCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "description": "Version of the complete observation projection.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "models": {
+            "description": "Current saved model observations; reading does not query providers.",
+            "items": {
+              "$ref": "#/$defs/ModelAvailability"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision",
+          "models"
+        ],
+        "title": "AvailabilityCatalog",
+        "type": "object"
+      },
       "BatchCommand": {
         "additionalProperties": false,
         "description": "Apply multiple operations atomically; all succeed or none are committed.",
@@ -1489,6 +1540,7 @@
                   "canvas.configure": "#/$defs/CanvasConfigureCommandOperation",
                   "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommandOperation",
                   "canvas.hide": "#/$defs/CanvasHideCommandOperation",
+                  "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommandOperation",
                   "canvas.materialize": "#/$defs/CanvasMaterializeCommandOperation",
                   "canvas.move": "#/$defs/CanvasMoveCommandOperation",
                   "canvas.show": "#/$defs/CanvasShowCommandOperation",
@@ -1515,6 +1567,9 @@
                 },
                 {
                   "$ref": "#/$defs/CanvasUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasLayoutRunsCommandOperation"
                 },
                 {
                   "$ref": "#/$defs/CanvasHideCommandOperation"
@@ -2406,6 +2461,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -2475,6 +2544,87 @@
           "revision"
         ],
         "title": "CanvasItemVersion",
+        "type": "object"
+      },
+      "CanvasLayoutRunsCommand": {
+        "additionalProperties": false,
+        "description": "Arrange the current canvas Run groups and their children without moving locked groups.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.layoutRuns",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/EmptyPayload",
+            "description": "Arrange the current canvas Run groups and their children without moving locked groups."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "CanvasLayoutRunsCommand",
+        "type": "object"
+      },
+      "CanvasLayoutRunsCommandOperation": {
+        "additionalProperties": false,
+        "description": "Arrange the current canvas Run groups and their children without moving locked groups.",
+        "properties": {
+          "type": {
+            "const": "canvas.layoutRuns",
+            "description": "Operation discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/EmptyPayload",
+            "description": "Arrange the current canvas Run groups and their children without moving locked groups."
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasLayoutRunsCommandOperation",
         "type": "object"
       },
       "CanvasMaterialize": {
@@ -2784,6 +2934,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format, or '' for the default.",
+            "title": "Color"
+          },
           "parentId": {
             "anyOf": [
               {
@@ -2797,6 +2961,23 @@
             "default": null,
             "description": "Parent canvas group ID, or null for the root.",
             "title": "Parentid"
+          },
+          "autoLayout": {
+            "anyOf": [
+              {
+                "enum": [
+                  "run",
+                  "free"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Enable Run layout for a top-level group, or use free to return it to manual layout.",
+            "title": "Autolayout"
           }
         },
         "required": [
@@ -3252,6 +3433,251 @@
         "title": "CanvasUpdateCommandOperation",
         "type": "object"
       },
+      "CapabilityDeclaration": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "description": "Support decision excluding execution state.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Localizable declaration decision.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Declaration expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityDeclaration",
+        "type": "object"
+      },
+      "CapabilityExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "description": "Observed execution pause state.",
+            "enum": [
+              "unpaused",
+              "paused",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "deployment",
+                  "worker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scope proved by the service observation.",
+            "title": "Scope"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation receipt time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Execution observation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "state",
+          "scope",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityExecution",
+        "type": "object"
+      },
+      "CapabilityInputDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Canonical input role or parameter name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "support": {
+            "description": "Explicit fact, with omission kept unknown.",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Support",
+            "type": "string"
+          },
+          "source": {
+            "default": "service",
+            "description": "Owner of this restriction.",
+            "enum": [
+              "service",
+              "application"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "minCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum transmitted inputs of this role.",
+            "title": "Mincount"
+          },
+          "maxCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum transmitted inputs of this role.",
+            "title": "Maxcount"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit allowed parameter values.",
+            "title": "Values"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter lower bound.",
+            "title": "Min"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter upper bound.",
+            "title": "Max"
+          },
+          "multipleOf": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Parameter step from zero.",
+            "title": "Multipleof"
+          }
+        },
+        "required": [
+          "name",
+          "support"
+        ],
+        "title": "CapabilityInputDetail",
+        "type": "object"
+      },
       "ChangedObject": {
         "additionalProperties": false,
         "properties": {
@@ -3462,8 +3888,19 @@
               "invalid_input",
               "revision_conflict",
               "role_restricted",
+              "canvas_run_layout_group",
+              "canvas_run_layout_conflict",
+              "canvas_run_layout_extent",
+              "canvas_run_layout_shared_object",
               "missing_object",
               "reference_invalid",
+              "image_quality_unsupported",
+              "bigmodel_video_model",
+              "bigmodel_video_output",
+              "bigmodel_video_image",
+              "bigmodel_video_frames",
+              "bigmodel_video_prompt",
+              "bigmodel_video_cancel",
               "kling_model",
               "kling_mode",
               "kling_image",
@@ -3472,6 +3909,23 @@
               "kling_aspect",
               "kling_output",
               "kling_cancel",
+              "higgsfield_model",
+              "higgsfield_key",
+              "higgsfield_output",
+              "higgsfield_parameters",
+              "higgsfield_mode",
+              "higgsfield_image",
+              "higgsfield_format",
+              "higgsfield_media_size",
+              "higgsfield_duration",
+              "higgsfield_reference_count",
+              "higgsfield_reference_changed",
+              "higgsfield_frames",
+              "higgsfield_references",
+              "higgsfield_prompt",
+              "capability_unavailable",
+              "capability_paused",
+              "capability_connection_changed",
               "capability_unsupported",
               "preview_expired",
               "storage_unavailable",
@@ -3484,6 +3938,19 @@
               "moss_image_size",
               "moss_image_reference",
               "moss_layout_reference",
+              "bigmodel_image_size",
+              "bigmodel_image_reference",
+              "bigmodel_image_prompt",
+              "minimax_image_reference",
+              "minimax_image_count",
+              "minimax_image_bytes",
+              "minimax_speech_text",
+              "minimax_speech_voice",
+              "minimax_speech_reference",
+              "minimax_speech_model",
+              "zhipu_speech_text",
+              "zhipu_speech_voice",
+              "zhipu_speech_reference",
               "voice_library_unsupported",
               "voice_connection_changed",
               "voice_reference_required",
@@ -3501,7 +3968,9 @@
               "voice_provider_protocol",
               "voice_provider_error",
               "voice_provider_timeout",
-              "voice_model_unsupported"
+              "voice_model_unsupported",
+              "voice_name_taken",
+              "voice_provider_quota"
             ],
             "title": "Code",
             "type": "string"
@@ -3540,6 +4009,20 @@
             "default": null,
             "description": "Path of the field responsible for this issue.",
             "title": "Field"
+          },
+          "relatedObjectId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Other business object involved in the issue.",
+            "title": "Relatedobjectid"
           }
         },
         "required": [
@@ -3716,6 +4199,7 @@
                 "canvas.createGeneration": "#/$defs/CanvasCreateGenerationCommand",
                 "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
                 "canvas.hide": "#/$defs/CanvasHideCommand",
+                "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommand",
                 "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
                 "canvas.move": "#/$defs/CanvasMoveCommand",
                 "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
@@ -3729,6 +4213,8 @@
                 "generationSpec.restore": "#/$defs/SpecRestoreCommand",
                 "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
                 "generationSpec.update": "#/$defs/SpecUpdateCommand",
+                "group.publishRun": "#/$defs/GroupPublishRunCommand",
+                "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
                 "history.redo": "#/$defs/HistoryRedoCommand",
                 "history.undo": "#/$defs/HistoryUndoCommand",
                 "job.cancel": "#/$defs/JobCancelCommand",
@@ -3779,6 +4265,12 @@
                 "$ref": "#/$defs/CanvasCreateGenerationCommand"
               },
               {
+                "$ref": "#/$defs/GroupSavePlanCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupPublishRunCommand"
+              },
+              {
                 "$ref": "#/$defs/CanvasShowCommand"
               },
               {
@@ -3786,6 +4278,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasUpdateCommand"
+              },
+              {
+                "$ref": "#/$defs/CanvasLayoutRunsCommand"
               },
               {
                 "$ref": "#/$defs/CanvasHideCommand"
@@ -3886,6 +4381,7 @@
                 "canvas.versions": "#/$defs/VersionsQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
+                "job.status": "#/$defs/JobStatusQuery",
                 "object.get": "#/$defs/ObjectQuery",
                 "project.get": "#/$defs/ProjectQuery"
               },
@@ -3909,6 +4405,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasStatusQuery"
+              },
+              {
+                "$ref": "#/$defs/JobStatusQuery"
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
@@ -4102,6 +4601,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -4393,6 +4906,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -4892,6 +5419,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -5001,7 +5542,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -5507,6 +6049,60 @@
         "title": "GenerationSubmitCommand",
         "type": "object"
       },
+      "GroupAssembly": {
+        "additionalProperties": false,
+        "properties": {
+          "timelineItemId": {
+            "description": "Timeline canvas node receiving the assembled clips.",
+            "format": "uuid",
+            "title": "Timelineitemid",
+            "type": "string"
+          },
+          "outputItemId": {
+            "description": "Stable canvas node ID for the published video.",
+            "format": "uuid",
+            "title": "Outputitemid",
+            "type": "string"
+          },
+          "clips": {
+            "description": "Generated clips in assembly order.",
+            "items": {
+              "$ref": "#/$defs/WorkflowClip"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Clips",
+            "type": "array"
+          },
+          "requireTimelineGuides": {
+            "default": false,
+            "description": "Required for H3 segmented plans. A confirmed plan keeps its guide requirement when its assembly is edited.",
+            "title": "Requiretimelineguides",
+            "type": "boolean"
+          },
+          "guideExemptItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The only generation anchor that may omit a timeline guide. Omit this to require a guide on every clip.",
+            "title": "Guideexemptitemid"
+          }
+        },
+        "required": [
+          "timelineItemId",
+          "outputItemId",
+          "clips"
+        ],
+        "title": "GroupAssembly",
+        "type": "object"
+      },
       "GroupCanvasItem": {
         "additionalProperties": false,
         "properties": {
@@ -5572,6 +6168,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -5604,6 +6214,115 @@
             "title": "Tags",
             "type": "array"
           },
+          "autoLayout": {
+            "anyOf": [
+              {
+                "const": "run",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Set to run to opt this top-level group into shared Run layout. Put its plan, clips and timeline under this group ID.",
+            "title": "Autolayout"
+          },
+          "runPlan": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SegmentRunPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frozen plan assigned only by the Run publication command."
+          },
+          "draftRunPlan": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SegmentRunPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Editable plan input from a published Run. Publish it before starting execution."
+          },
+          "runPlanItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Read-only canvas node showing the published plan.",
+            "title": "Runplanitemid"
+          },
+          "runDefinitionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Publication command ID identifying this frozen Run definition.",
+            "title": "Rundefinitionid"
+          },
+          "runPlanLocale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh-CN",
+                  "en-US"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Language of the visible Run plan.",
+            "title": "Runplanlocale"
+          },
+          "runPlanNotes": {
+            "anyOf": [
+              {
+                "maxLength": 16000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Editable notes accompanying the Run plan.",
+            "title": "Runplannotes"
+          },
+          "assembly": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/GroupAssembly"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional frame-accurate assembly after the group generation run."
+          },
           "binding": {
             "$ref": "#/$defs/ContainerBinding",
             "description": "Business object displayed by this canvas item."
@@ -5615,6 +6334,205 @@
           "kind"
         ],
         "title": "GroupCanvasItem",
+        "type": "object"
+      },
+      "GroupPlanDraft": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "assembly": {
+              "clips": [
+                {
+                  "inFrame": 0,
+                  "itemId": "00000000-0000-0000-0000-000000000003",
+                  "outFrame": 24
+                }
+              ],
+              "outputItemId": "00000000-0000-0000-0000-000000000005",
+              "timelineItemId": "00000000-0000-0000-0000-000000000004"
+            },
+            "groupId": "00000000-0000-0000-0000-000000000001",
+            "plan": {
+              "entries": [
+                {
+                  "itemId": "00000000-0000-0000-0000-000000000003",
+                  "kind": "generated",
+                  "shot": "opening",
+                  "sourceEnd": 24,
+                  "sourceStart": 0,
+                  "step": {
+                    "kind": "anchor"
+                  }
+                }
+              ],
+              "fps": 24,
+              "frameCount": 24,
+              "source": {
+                "assetId": "00000000-0000-0000-0000-000000000002",
+                "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                "kind": "video",
+                "revision": 1
+              }
+            }
+          }
+        ],
+        "properties": {
+          "groupId": {
+            "description": "Canvas group holding the draft.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/$defs/SegmentRunPlan",
+            "description": "Segment intervals in source order."
+          },
+          "assembly": {
+            "$ref": "#/$defs/GroupAssembly",
+            "description": "Retained frames for the generated intervals."
+          },
+          "planLocale": {
+            "default": "zh-CN",
+            "description": "Language of the published plan.",
+            "enum": [
+              "zh-CN",
+              "en-US"
+            ],
+            "title": "Planlocale",
+            "type": "string"
+          },
+          "planNotes": {
+            "default": "",
+            "description": "Notes accompanying the plan.",
+            "maxLength": 16000,
+            "title": "Plannotes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "plan",
+          "assembly"
+        ],
+        "title": "GroupPlanDraft",
+        "type": "object"
+      },
+      "GroupPublishRunCommand": {
+        "additionalProperties": false,
+        "description": "Publish the segment plan as a Markdown canvas node.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.publishRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupPlanDraft",
+            "description": "Publish the segment plan as a Markdown canvas node."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupPublishRunCommand",
+        "type": "object"
+      },
+      "GroupSavePlanCommand": {
+        "additionalProperties": false,
+        "description": "Save a draft segment plan.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.saveRunPlan",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupPlanDraft",
+            "description": "Save a draft segment plan."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "GroupSavePlanCommand",
         "type": "object"
       },
       "HistoryRedoCommand": {
@@ -5815,6 +6733,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -6100,6 +7032,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality fixed for this execution; auto omits the provider field.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "description": "Effective image dimensions sent to the provider.",
             "title": "Size",
@@ -6141,6 +7085,34 @@
             "default": null,
             "description": "Whether provider watermarking is enabled.",
             "title": "Watermark"
+          },
+          "numInferenceSteps": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion sampling step count.",
+            "title": "Numinferencesteps"
+          },
+          "guidanceScale": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion guidance scale.",
+            "title": "Guidancescale"
           }
         },
         "required": [
@@ -6454,6 +7426,18 @@
       "ImageParameters": {
         "additionalProperties": false,
         "properties": {
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality; auto leaves the provider request unchanged.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "default": "auto",
             "description": "Requested image dimensions or size preset.",
@@ -6477,13 +7461,16 @@
           },
           "preset": {
             "default": "none",
-            "description": "Selected generation or motion preset.",
-            "enum": [
-              "none",
-              "product-views"
-            ],
+            "description": "Selected generation or prompt-skill preset.",
+            "pattern": "^(?:none|product-views|[a-z0-9-]{1,40})$",
             "title": "Preset",
             "type": "string"
+          },
+          "faceEmphasis": {
+            "default": false,
+            "description": "Preset alternate framing that emphasises the face.",
+            "title": "Faceemphasis",
+            "type": "boolean"
           },
           "responseFormat": {
             "const": "url",
@@ -6506,6 +7493,12 @@
       "InputRules": {
         "additionalProperties": false,
         "properties": {
+          "fractionalDuration": {
+            "default": false,
+            "description": "Accept fractional video seconds within each output duration range.",
+            "title": "Fractionalduration",
+            "type": "boolean"
+          },
           "profile": {
             "description": "Model capability profile.",
             "maxLength": 100,
@@ -6551,6 +7544,20 @@
             "default": null,
             "description": "Whether speech generation requires an explicit service voice ID.",
             "title": "Voicerequired"
+          },
+          "defaultVoice": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service voice ID applied when a required selection is still empty.",
+            "title": "Defaultvoice"
           },
           "referencesAllowed": {
             "anyOf": [
@@ -6609,6 +7616,48 @@
             "title": "Videobytes",
             "type": "integer"
           },
+          "audioBytes": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum bytes per reference audio; omitted preserves the existing request budget.",
+            "title": "Audiobytes"
+          },
+          "referenceMediaMinSeconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum duration of each reference video or audio clip.",
+            "title": "Referencemediaminseconds"
+          },
+          "referenceMediaSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum total reference duration, applied separately to video and audio.",
+            "title": "Referencemediaseconds"
+          },
           "requestBytes": {
             "description": "Maximum aggregate reference bytes per request.",
             "minimum": 0,
@@ -6621,7 +7670,8 @@
               "enum": [
                 "first_frame",
                 "reference",
-                "continuation"
+                "continuation",
+                "control"
               ],
               "type": "string"
             },
@@ -6636,6 +7686,28 @@
             },
             "title": "Imageoutputs",
             "type": "array"
+          },
+          "imageQualities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "auto",
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Supported image rendering qualities; omitted for models without quality control.",
+            "title": "Imagequalities"
           },
           "outputResolutions": {
             "default": [],
@@ -6799,6 +7871,19 @@
             },
             "title": "References",
             "type": "array"
+          },
+          "presetPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Image preset instructions frozen when the job is accepted.",
+            "title": "Presetprompt"
           }
         },
         "required": [
@@ -7106,6 +8191,35 @@
             "description": "Fixed provider-specific execution parameters.",
             "title": "Adapterparameters",
             "type": "object"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Agent turn that submitted this job; omitted for jobs not submitted by an Agent.",
+            "title": "Agentrunid"
+          },
+          "agentCallId": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Tool call within that turn that submitted this job; the command ID derives from both.",
+            "title": "Agentcallid"
           }
         },
         "required": [
@@ -7323,6 +8437,65 @@
           "payload"
         ],
         "title": "JobRecoverCommand",
+        "type": "object"
+      },
+      "JobStatusQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "job.status",
+            "description": "Read several generation jobs, optionally waiting for terminal states.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectIds": {
+            "default": [],
+            "description": "Generation job IDs; every unfinished project job when empty.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Objectids",
+            "type": "array"
+          },
+          "waitSeconds": {
+            "default": 0,
+            "description": "Wait for terminal states; zero returns immediately.",
+            "maximum": 300,
+            "minimum": 0,
+            "title": "Waitseconds",
+            "type": "number"
+          },
+          "until": {
+            "default": "all",
+            "description": "Return after every selected job or any job reaches a terminal state.",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type"
+        ],
+        "title": "JobStatusQuery",
         "type": "object"
       },
       "JsonValue": {},
@@ -7588,6 +8761,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -7697,6 +8884,7 @@
               "video-matting",
               "video-crop",
               "video-translation",
+              "video-mask-composite",
               "extract-audio",
               "audio-separation",
               "video-trim",
@@ -8000,6 +9188,105 @@
         "title": "MediaPublicationOutput",
         "type": "object"
       },
+      "ModelAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "configId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved model identity; null for an unsaved draft.",
+            "title": "Configid"
+          },
+          "modelId": {
+            "description": "Exact remote model identifier requested.",
+            "title": "Modelid",
+            "type": "string"
+          },
+          "identity": {
+            "description": "Opaque identity of the checked connection and model.",
+            "title": "Identity",
+            "type": "string"
+          },
+          "autoCheck": {
+            "description": "Effective service automatic-check preference.",
+            "title": "Autocheck",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Summary across the configured adapter operations.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable summary reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Earliest operation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          },
+          "revision": {
+            "description": "Projection version; changes on observations, identity changes and expiration.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "operations": {
+            "description": "Exact operations consumed by the configured adapter.",
+            "items": {
+              "$ref": "#/$defs/OperationAvailability"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configId",
+          "modelId",
+          "identity",
+          "autoCheck",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt",
+          "revision",
+          "operations"
+        ],
+        "title": "ModelAvailability",
+        "type": "object"
+      },
       "ModelConfigPublic": {
         "additionalProperties": false,
         "description": "Application-level, never embedded in an editable project's credential data.",
@@ -8044,6 +9331,8 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8080,7 +9369,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -8100,6 +9391,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8141,6 +9433,31 @@
           "inputRules": {
             "$ref": "#/$defs/InputRules",
             "description": "Verified model input limits and output choices."
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service preference; omitted defaults to automatic for self-hosted connections.",
+            "title": "Capabilityautocheck"
+          },
+          "availability": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelAvailability"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Ephemeral observation, never persisted in project snapshots."
           }
         },
         "required": [
@@ -8200,6 +9517,8 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8236,7 +9555,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -8256,6 +9577,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8289,6 +9611,19 @@
             "default": null,
             "description": "Provider credential; omitted from public model records.",
             "title": "Apikey"
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service automatic-check override; omission preserves the existing preference.",
+            "title": "Capabilityautocheck"
           }
         },
         "required": [
@@ -8345,6 +9680,8 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8381,7 +9718,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -8401,6 +9740,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8471,6 +9811,8 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8507,7 +9849,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -8527,6 +9871,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8834,6 +10179,121 @@
         "title": "ObjectVersion",
         "type": "object"
       },
+      "OperationAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "description": "Canonical remote operation identifier.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "profile": {
+            "description": "Input and output mode used by the configured adapter.",
+            "title": "Profile",
+            "type": "string"
+          },
+          "method": {
+            "description": "Actual HTTP method used for submission.",
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "description": "Actual HTTP submission path.",
+            "title": "Path",
+            "type": "string"
+          },
+          "output": {
+            "description": "Output modality consumed by the adapter.",
+            "title": "Output",
+            "type": "string"
+          },
+          "status": {
+            "description": "Current evidence for this exact request.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable decision reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Decision expiry in Unix milliseconds; recompute after expiry.",
+            "title": "Expiresat"
+          },
+          "declaration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityDeclaration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Request support independently expires from the short execution observation."
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityExecution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short-lived execution observation, separate from declared support."
+          },
+          "inputDetails": {
+            "default": [],
+            "description": "Known role and parameter facts for the actual request route; no saved configuration changes.",
+            "items": {
+              "$ref": "#/$defs/CapabilityInputDetail"
+            },
+            "title": "Inputdetails",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation",
+          "profile",
+          "method",
+          "path",
+          "output",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "OperationAvailability",
+        "type": "object"
+      },
       "PaletteData": {
         "additionalProperties": false,
         "properties": {
@@ -8927,7 +10387,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -9087,6 +10548,20 @@
             "pattern": "\\S",
             "title": "Name",
             "type": "string"
+          },
+          "defaultNameIndex": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Index of the automatically named initial project.",
+            "title": "Defaultnameindex"
           }
         },
         "required": [
@@ -9106,6 +10581,20 @@
             "pattern": "\\S",
             "title": "Name",
             "type": "string"
+          },
+          "defaultNameIndex": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Index for an automatically named initial project.",
+            "title": "Defaultnameindex"
           }
         },
         "required": [
@@ -9957,7 +11446,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -10287,7 +11777,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -10573,6 +12064,214 @@
           "inputFingerprint"
         ],
         "title": "ResultVersion",
+        "type": "object"
+      },
+      "SegmentRunAnchor": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "anchor",
+            "description": "One independent generation anchor in the declared source shot.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "SegmentRunAnchor",
+        "type": "object"
+      },
+      "SegmentRunContinuation": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "continuation",
+            "description": "Generation requires the selected upstream result as a guide.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "upstreamItemId": {
+            "description": "Generation node providing the raw guide frames.",
+            "format": "uuid",
+            "title": "Upstreamitemid",
+            "type": "string"
+          },
+          "sourceFrames": {
+            "description": "Two distinct indices into the raw upstream result for destination frames 0 and 21, in that order.",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "maximum": 359,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "maximum": 359,
+                "minimum": 0,
+                "type": "integer"
+              }
+            ],
+            "title": "Sourceframes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "upstreamItemId",
+          "sourceFrames"
+        ],
+        "title": "SegmentRunContinuation",
+        "type": "object"
+      },
+      "SegmentRunGenerated": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceStart": {
+            "description": "First covered frame in the normalized working source.",
+            "minimum": 0,
+            "title": "Sourcestart",
+            "type": "integer"
+          },
+          "sourceEnd": {
+            "description": "Exclusive end of the covered interval in the normalized working source.",
+            "minimum": 1,
+            "title": "Sourceend",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "generated",
+            "description": "Use the retained result from a generation step.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "itemId": {
+            "description": "Generation canvas node that provides the result.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "shot": {
+            "description": "Identity of the inspected continuous shot used to determine guide dependencies.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Shot",
+            "type": "string"
+          },
+          "step": {
+            "description": "Independent anchor or guided continuation in this shot.",
+            "discriminator": {
+              "mapping": {
+                "anchor": "#/$defs/SegmentRunAnchor",
+                "continuation": "#/$defs/SegmentRunContinuation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SegmentRunAnchor"
+              },
+              {
+                "$ref": "#/$defs/SegmentRunContinuation"
+              }
+            ],
+            "title": "Step"
+          }
+        },
+        "required": [
+          "sourceStart",
+          "sourceEnd",
+          "kind",
+          "itemId",
+          "shot",
+          "step"
+        ],
+        "title": "SegmentRunGenerated",
+        "type": "object"
+      },
+      "SegmentRunPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/AssetRef",
+            "description": "Exact normalized working video whose entire frame range is delivered."
+          },
+          "fps": {
+            "description": "Integer frames per second of the normalized working video.",
+            "minimum": 1,
+            "title": "Fps",
+            "type": "integer"
+          },
+          "frameCount": {
+            "description": "Decoded frame count of the normalized working video.",
+            "minimum": 1,
+            "title": "Framecount",
+            "type": "integer"
+          },
+          "entries": {
+            "description": "Delivery intervals in source playback order.",
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "generated": "#/$defs/SegmentRunGenerated",
+                  "source": "#/$defs/SegmentRunSource"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/SegmentRunSource"
+                },
+                {
+                  "$ref": "#/$defs/SegmentRunGenerated"
+                }
+              ]
+            },
+            "maxItems": 101,
+            "minItems": 1,
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source",
+          "fps",
+          "frameCount",
+          "entries"
+        ],
+        "title": "SegmentRunPlan",
+        "type": "object"
+      },
+      "SegmentRunSource": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceStart": {
+            "description": "First covered frame in the normalized working source.",
+            "minimum": 0,
+            "title": "Sourcestart",
+            "type": "integer"
+          },
+          "sourceEnd": {
+            "description": "Exclusive end of the covered interval in the normalized working source.",
+            "minimum": 1,
+            "title": "Sourceend",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "source",
+            "description": "Retain these frames from the frozen working source.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceStart",
+          "sourceEnd",
+          "kind"
+        ],
+        "title": "SegmentRunSource",
         "type": "object"
       },
       "SelectionBox": {
@@ -11100,6 +12799,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -11497,6 +13210,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -11763,6 +13490,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -12135,6 +13876,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -12762,6 +14517,20 @@
             "title": "Outputid",
             "type": "string"
           },
+          "expectedOutputRevision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Current output node revision when appending a rendered version.",
+            "title": "Expectedoutputrevision"
+          },
           "title": {
             "default": "合成视频",
             "description": "User-visible title.",
@@ -13204,6 +14973,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -13738,6 +15521,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -14204,7 +16001,8 @@
             "enum": [
               "first_frame",
               "reference",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Videomode",
             "type": "string"
@@ -14221,7 +16019,7 @@
               }
             ],
             "default": null,
-            "description": "Duration in seconds.",
+            "description": "Duration in seconds; fractional values require model inputRules.fractionalDuration. Generated frames may be aligned by the model.",
             "title": "Durationseconds"
           },
           "aspectRatio": {
@@ -14356,7 +16154,9 @@
             "description": "Voice registry protocol.",
             "enum": [
               "vllm_omni",
-              "moss"
+              "moss",
+              "minimax",
+              "zhipu"
             ],
             "title": "Provider",
             "type": "string"
@@ -14371,6 +16171,12 @@
           "requiresTranscript": {
             "description": "Registered voice must have a reference transcript.",
             "title": "Requirestranscript",
+            "type": "boolean"
+          },
+          "acceptsTranscript": {
+            "default": false,
+            "description": "Registry stores an optional reference transcript when one is supplied.",
+            "title": "Acceptstranscript",
             "type": "boolean"
           },
           "requiresReferenceAudio": {
@@ -14534,6 +16340,59 @@
           "hasReferenceAudio"
         ],
         "title": "VoiceSelection",
+        "type": "object"
+      },
+      "WorkflowClip": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "description": "Generation canvas node providing the raw video.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "inFrame": {
+            "description": "First retained frame in playback order.",
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Inframe",
+            "type": "integer"
+          },
+          "outFrame": {
+            "description": "Exclusive end of the retained frames.",
+            "maximum": 4096,
+            "minimum": 1,
+            "title": "Outframe",
+            "type": "integer"
+          },
+          "reverse": {
+            "default": false,
+            "description": "Reverse the raw window before keeping the selected frames.",
+            "title": "Reverse",
+            "type": "boolean"
+          },
+          "frameLimit": {
+            "anyOf": [
+              {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional cap on the raw window before reversal.",
+            "title": "Framelimit"
+          }
+        },
+        "required": [
+          "itemId",
+          "inFrame",
+          "outFrame"
+        ],
+        "title": "WorkflowClip",
         "type": "object"
       }
     },
@@ -14703,6 +16562,7 @@
             "canvas.createGeneration": "#/$defs/CanvasCreateGenerationCommand",
             "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
             "canvas.hide": "#/$defs/CanvasHideCommand",
+            "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommand",
             "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
             "canvas.move": "#/$defs/CanvasMoveCommand",
             "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
@@ -14716,6 +16576,8 @@
             "generationSpec.restore": "#/$defs/SpecRestoreCommand",
             "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
             "generationSpec.update": "#/$defs/SpecUpdateCommand",
+            "group.publishRun": "#/$defs/GroupPublishRunCommand",
+            "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
             "history.redo": "#/$defs/HistoryRedoCommand",
             "history.undo": "#/$defs/HistoryUndoCommand",
             "job.cancel": "#/$defs/JobCancelCommand",
@@ -14766,6 +16628,12 @@
             "$ref": "#/$defs/CanvasCreateGenerationCommand"
           },
           {
+            "$ref": "#/$defs/GroupSavePlanCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupPublishRunCommand"
+          },
+          {
             "$ref": "#/$defs/CanvasShowCommand"
           },
           {
@@ -14773,6 +16641,9 @@
           },
           {
             "$ref": "#/$defs/CanvasUpdateCommand"
+          },
+          {
+            "$ref": "#/$defs/CanvasLayoutRunsCommand"
           },
           {
             "$ref": "#/$defs/CanvasHideCommand"
@@ -14873,6 +16744,7 @@
             "canvas.versions": "#/$defs/VersionsQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
+            "job.status": "#/$defs/JobStatusQuery",
             "object.get": "#/$defs/ObjectQuery",
             "project.get": "#/$defs/ProjectQuery"
           },
@@ -14896,6 +16768,9 @@
           },
           {
             "$ref": "#/$defs/CanvasStatusQuery"
+          },
+          {
+            "$ref": "#/$defs/JobStatusQuery"
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"
@@ -16065,6 +17940,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -16255,6 +18144,19 @@
             "default": null,
             "description": "Whether reference music supplies melody or full accompaniment.",
             "title": "Scoremode"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Random seed fixed when the job was accepted.",
+            "title": "Seed"
           }
         },
         "required": [
@@ -16499,6 +18401,30 @@
         "title": "AudioParameters",
         "type": "object"
       },
+      "AvailabilityCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "description": "Version of the complete observation projection.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "models": {
+            "description": "Current saved model observations; reading does not query providers.",
+            "items": {
+              "$ref": "#/$defs/ModelAvailability"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision",
+          "models"
+        ],
+        "title": "AvailabilityCatalog",
+        "type": "object"
+      },
       "BatchCommand": {
         "additionalProperties": false,
         "description": "Apply multiple operations atomically; all succeed or none are committed.",
@@ -16573,6 +18499,7 @@
                   "canvas.configure": "#/$defs/CanvasConfigureCommandOperation",
                   "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommandOperation",
                   "canvas.hide": "#/$defs/CanvasHideCommandOperation",
+                  "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommandOperation",
                   "canvas.materialize": "#/$defs/CanvasMaterializeCommandOperation",
                   "canvas.move": "#/$defs/CanvasMoveCommandOperation",
                   "canvas.show": "#/$defs/CanvasShowCommandOperation",
@@ -16599,6 +18526,9 @@
                 },
                 {
                   "$ref": "#/$defs/CanvasUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasLayoutRunsCommandOperation"
                 },
                 {
                   "$ref": "#/$defs/CanvasHideCommandOperation"
@@ -17505,6 +19435,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -17584,6 +19528,89 @@
           "revision"
         ],
         "title": "CanvasItemVersion",
+        "type": "object"
+      },
+      "CanvasLayoutRunsCommand": {
+        "additionalProperties": false,
+        "description": "Arrange the current canvas Run groups and their children without moving locked groups.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.layoutRuns",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/EmptyPayload",
+            "description": "Arrange the current canvas Run groups and their children without moving locked groups."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "CanvasLayoutRunsCommand",
+        "type": "object"
+      },
+      "CanvasLayoutRunsCommandOperation": {
+        "additionalProperties": false,
+        "description": "Arrange the current canvas Run groups and their children without moving locked groups.",
+        "properties": {
+          "type": {
+            "const": "canvas.layoutRuns",
+            "description": "Operation discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/EmptyPayload",
+            "description": "Arrange the current canvas Run groups and their children without moving locked groups."
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasLayoutRunsCommandOperation",
         "type": "object"
       },
       "CanvasMaterialize": {
@@ -17898,6 +19925,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format, or '' for the default.",
+            "title": "Color"
+          },
           "parentId": {
             "anyOf": [
               {
@@ -17911,6 +19952,23 @@
             "default": null,
             "description": "Parent canvas group ID, or null for the root.",
             "title": "Parentid"
+          },
+          "autoLayout": {
+            "anyOf": [
+              {
+                "enum": [
+                  "run",
+                  "free"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Enable Run layout for a top-level group, or use free to return it to manual layout.",
+            "title": "Autolayout"
           }
         },
         "required": [
@@ -18381,6 +20439,258 @@
         "title": "CanvasUpdateCommandOperation",
         "type": "object"
       },
+      "CapabilityDeclaration": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "description": "Support decision excluding execution state.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Localizable declaration decision.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Declaration expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityDeclaration",
+        "type": "object"
+      },
+      "CapabilityExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "description": "Observed execution pause state.",
+            "enum": [
+              "unpaused",
+              "paused",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "deployment",
+                  "worker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scope proved by the service observation.",
+            "title": "Scope"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation receipt time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Execution observation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          }
+        },
+        "required": [
+          "state",
+          "scope",
+          "checkedAt",
+          "expiresAt"
+        ],
+        "title": "CapabilityExecution",
+        "type": "object"
+      },
+      "CapabilityInputDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Canonical input role or parameter name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "support": {
+            "description": "Explicit fact, with omission kept unknown.",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Support",
+            "type": "string"
+          },
+          "source": {
+            "default": "service",
+            "description": "Owner of this restriction.",
+            "enum": [
+              "service",
+              "application"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "minCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum transmitted inputs of this role.",
+            "title": "Mincount"
+          },
+          "maxCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum transmitted inputs of this role.",
+            "title": "Maxcount"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit allowed parameter values.",
+            "title": "Values"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter lower bound.",
+            "title": "Min"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Inclusive parameter upper bound.",
+            "title": "Max"
+          },
+          "multipleOf": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Parameter step from zero.",
+            "title": "Multipleof"
+          }
+        },
+        "required": [
+          "name",
+          "support",
+          "source",
+          "minCount",
+          "maxCount",
+          "values",
+          "min",
+          "max",
+          "multipleOf"
+        ],
+        "title": "CapabilityInputDetail",
+        "type": "object"
+      },
       "ChangedObject": {
         "additionalProperties": false,
         "properties": {
@@ -18597,8 +20907,19 @@
               "invalid_input",
               "revision_conflict",
               "role_restricted",
+              "canvas_run_layout_group",
+              "canvas_run_layout_conflict",
+              "canvas_run_layout_extent",
+              "canvas_run_layout_shared_object",
               "missing_object",
               "reference_invalid",
+              "image_quality_unsupported",
+              "bigmodel_video_model",
+              "bigmodel_video_output",
+              "bigmodel_video_image",
+              "bigmodel_video_frames",
+              "bigmodel_video_prompt",
+              "bigmodel_video_cancel",
               "kling_model",
               "kling_mode",
               "kling_image",
@@ -18607,6 +20928,23 @@
               "kling_aspect",
               "kling_output",
               "kling_cancel",
+              "higgsfield_model",
+              "higgsfield_key",
+              "higgsfield_output",
+              "higgsfield_parameters",
+              "higgsfield_mode",
+              "higgsfield_image",
+              "higgsfield_format",
+              "higgsfield_media_size",
+              "higgsfield_duration",
+              "higgsfield_reference_count",
+              "higgsfield_reference_changed",
+              "higgsfield_frames",
+              "higgsfield_references",
+              "higgsfield_prompt",
+              "capability_unavailable",
+              "capability_paused",
+              "capability_connection_changed",
               "capability_unsupported",
               "preview_expired",
               "storage_unavailable",
@@ -18619,6 +20957,19 @@
               "moss_image_size",
               "moss_image_reference",
               "moss_layout_reference",
+              "bigmodel_image_size",
+              "bigmodel_image_reference",
+              "bigmodel_image_prompt",
+              "minimax_image_reference",
+              "minimax_image_count",
+              "minimax_image_bytes",
+              "minimax_speech_text",
+              "minimax_speech_voice",
+              "minimax_speech_reference",
+              "minimax_speech_model",
+              "zhipu_speech_text",
+              "zhipu_speech_voice",
+              "zhipu_speech_reference",
               "voice_library_unsupported",
               "voice_connection_changed",
               "voice_reference_required",
@@ -18636,7 +20987,9 @@
               "voice_provider_protocol",
               "voice_provider_error",
               "voice_provider_timeout",
-              "voice_model_unsupported"
+              "voice_model_unsupported",
+              "voice_name_taken",
+              "voice_provider_quota"
             ],
             "title": "Code",
             "type": "string"
@@ -18675,6 +21028,20 @@
             "default": null,
             "description": "Path of the field responsible for this issue.",
             "title": "Field"
+          },
+          "relatedObjectId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Other business object involved in the issue.",
+            "title": "Relatedobjectid"
           }
         },
         "required": [
@@ -18853,6 +21220,7 @@
                 "canvas.createGeneration": "#/$defs/CanvasCreateGenerationCommand",
                 "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
                 "canvas.hide": "#/$defs/CanvasHideCommand",
+                "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommand",
                 "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
                 "canvas.move": "#/$defs/CanvasMoveCommand",
                 "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
@@ -18866,6 +21234,8 @@
                 "generationSpec.restore": "#/$defs/SpecRestoreCommand",
                 "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
                 "generationSpec.update": "#/$defs/SpecUpdateCommand",
+                "group.publishRun": "#/$defs/GroupPublishRunCommand",
+                "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
                 "history.redo": "#/$defs/HistoryRedoCommand",
                 "history.undo": "#/$defs/HistoryUndoCommand",
                 "job.cancel": "#/$defs/JobCancelCommand",
@@ -18916,6 +21286,12 @@
                 "$ref": "#/$defs/CanvasCreateGenerationCommand"
               },
               {
+                "$ref": "#/$defs/GroupSavePlanCommand"
+              },
+              {
+                "$ref": "#/$defs/GroupPublishRunCommand"
+              },
+              {
                 "$ref": "#/$defs/CanvasShowCommand"
               },
               {
@@ -18923,6 +21299,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasUpdateCommand"
+              },
+              {
+                "$ref": "#/$defs/CanvasLayoutRunsCommand"
               },
               {
                 "$ref": "#/$defs/CanvasHideCommand"
@@ -19023,6 +21402,7 @@
                 "canvas.versions": "#/$defs/VersionsQuery",
                 "generationSpec.versions": "#/$defs/VersionsQuery",
                 "job.get": "#/$defs/ObjectQuery",
+                "job.status": "#/$defs/JobStatusQuery",
                 "object.get": "#/$defs/ObjectQuery",
                 "project.get": "#/$defs/ProjectQuery"
               },
@@ -19046,6 +21426,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasStatusQuery"
+              },
+              {
+                "$ref": "#/$defs/JobStatusQuery"
               },
               {
                 "$ref": "#/$defs/AssetPreviewQuery"
@@ -19239,6 +21622,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -19548,6 +21945,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -20067,6 +22478,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -20187,7 +22612,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -20714,6 +23140,60 @@
         "title": "GenerationSubmitCommand",
         "type": "object"
       },
+      "GroupAssembly": {
+        "additionalProperties": false,
+        "properties": {
+          "timelineItemId": {
+            "description": "Timeline canvas node receiving the assembled clips.",
+            "format": "uuid",
+            "title": "Timelineitemid",
+            "type": "string"
+          },
+          "outputItemId": {
+            "description": "Stable canvas node ID for the published video.",
+            "format": "uuid",
+            "title": "Outputitemid",
+            "type": "string"
+          },
+          "clips": {
+            "description": "Generated clips in assembly order.",
+            "items": {
+              "$ref": "#/$defs/WorkflowClip"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Clips",
+            "type": "array"
+          },
+          "requireTimelineGuides": {
+            "default": false,
+            "description": "Required for H3 segmented plans. A confirmed plan keeps its guide requirement when its assembly is edited.",
+            "title": "Requiretimelineguides",
+            "type": "boolean"
+          },
+          "guideExemptItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The only generation anchor that may omit a timeline guide. Omit this to require a guide on every clip.",
+            "title": "Guideexemptitemid"
+          }
+        },
+        "required": [
+          "timelineItemId",
+          "outputItemId",
+          "clips"
+        ],
+        "title": "GroupAssembly",
+        "type": "object"
+      },
       "GroupCanvasItem": {
         "additionalProperties": false,
         "properties": {
@@ -20779,6 +23259,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -20811,6 +23305,115 @@
             "title": "Tags",
             "type": "array"
           },
+          "autoLayout": {
+            "anyOf": [
+              {
+                "const": "run",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Set to run to opt this top-level group into shared Run layout. Put its plan, clips and timeline under this group ID.",
+            "title": "Autolayout"
+          },
+          "runPlan": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SegmentRunPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frozen plan assigned only by the Run publication command."
+          },
+          "draftRunPlan": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SegmentRunPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Editable plan input from a published Run. Publish it before starting execution."
+          },
+          "runPlanItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Read-only canvas node showing the published plan.",
+            "title": "Runplanitemid"
+          },
+          "runDefinitionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Publication command ID identifying this frozen Run definition.",
+            "title": "Rundefinitionid"
+          },
+          "runPlanLocale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh-CN",
+                  "en-US"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Language of the visible Run plan.",
+            "title": "Runplanlocale"
+          },
+          "runPlanNotes": {
+            "anyOf": [
+              {
+                "maxLength": 16000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Editable notes accompanying the Run plan.",
+            "title": "Runplannotes"
+          },
+          "assembly": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/GroupAssembly"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional frame-accurate assembly after the group generation run."
+          },
           "binding": {
             "$ref": "#/$defs/ContainerBinding",
             "description": "Business object displayed by this canvas item."
@@ -20833,6 +23436,211 @@
           "binding"
         ],
         "title": "GroupCanvasItem",
+        "type": "object"
+      },
+      "GroupPlanDraft": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "assembly": {
+              "clips": [
+                {
+                  "inFrame": 0,
+                  "itemId": "00000000-0000-0000-0000-000000000003",
+                  "outFrame": 24
+                }
+              ],
+              "outputItemId": "00000000-0000-0000-0000-000000000005",
+              "timelineItemId": "00000000-0000-0000-0000-000000000004"
+            },
+            "groupId": "00000000-0000-0000-0000-000000000001",
+            "plan": {
+              "entries": [
+                {
+                  "itemId": "00000000-0000-0000-0000-000000000003",
+                  "kind": "generated",
+                  "shot": "opening",
+                  "sourceEnd": 24,
+                  "sourceStart": 0,
+                  "step": {
+                    "kind": "anchor"
+                  }
+                }
+              ],
+              "fps": 24,
+              "frameCount": 24,
+              "source": {
+                "assetId": "00000000-0000-0000-0000-000000000002",
+                "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                "kind": "video",
+                "revision": 1
+              }
+            }
+          }
+        ],
+        "properties": {
+          "groupId": {
+            "description": "Canvas group holding the draft.",
+            "format": "uuid",
+            "title": "Groupid",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/$defs/SegmentRunPlan",
+            "description": "Segment intervals in source order."
+          },
+          "assembly": {
+            "$ref": "#/$defs/GroupAssembly",
+            "description": "Retained frames for the generated intervals."
+          },
+          "planLocale": {
+            "default": "zh-CN",
+            "description": "Language of the published plan.",
+            "enum": [
+              "zh-CN",
+              "en-US"
+            ],
+            "title": "Planlocale",
+            "type": "string"
+          },
+          "planNotes": {
+            "default": "",
+            "description": "Notes accompanying the plan.",
+            "maxLength": 16000,
+            "title": "Plannotes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "plan",
+          "assembly",
+          "planLocale",
+          "planNotes"
+        ],
+        "title": "GroupPlanDraft",
+        "type": "object"
+      },
+      "GroupPublishRunCommand": {
+        "additionalProperties": false,
+        "description": "Publish the segment plan as a Markdown canvas node.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.publishRun",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupPlanDraft",
+            "description": "Publish the segment plan as a Markdown canvas node."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupPublishRunCommand",
+        "type": "object"
+      },
+      "GroupSavePlanCommand": {
+        "additionalProperties": false,
+        "description": "Save a draft segment plan.",
+        "properties": {
+          "commandId": {
+            "description": "Stable command ID for idempotent replay.",
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "group.saveRunPlan",
+            "description": "Command discriminator.",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "description": "Current versions of mutated existing objects; payload revision fields do not replace these.",
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fingerprint of the confirmed impact preview.",
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/GroupPlanDraft",
+            "description": "Save a draft segment plan."
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "GroupSavePlanCommand",
         "type": "object"
       },
       "HistoryRedoCommand": {
@@ -21037,6 +23845,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -21350,6 +24172,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality fixed for this execution; auto omits the provider field.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "description": "Effective image dimensions sent to the provider.",
             "title": "Size",
@@ -21391,6 +24225,34 @@
             "default": null,
             "description": "Whether provider watermarking is enabled.",
             "title": "Watermark"
+          },
+          "numInferenceSteps": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion sampling step count.",
+            "title": "Numinferencesteps"
+          },
+          "guidanceScale": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Diffusion guidance scale.",
+            "title": "Guidancescale"
           }
         },
         "required": [
@@ -21723,6 +24585,18 @@
       "ImageParameters": {
         "additionalProperties": false,
         "properties": {
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality; auto leaves the provider request unchanged.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "default": "auto",
             "description": "Requested image dimensions or size preset.",
@@ -21746,13 +24620,16 @@
           },
           "preset": {
             "default": "none",
-            "description": "Selected generation or motion preset.",
-            "enum": [
-              "none",
-              "product-views"
-            ],
+            "description": "Selected generation or prompt-skill preset.",
+            "pattern": "^(?:none|product-views|[a-z0-9-]{1,40})$",
             "title": "Preset",
             "type": "string"
+          },
+          "faceEmphasis": {
+            "default": false,
+            "description": "Preset alternate framing that emphasises the face.",
+            "title": "Faceemphasis",
+            "type": "boolean"
           },
           "responseFormat": {
             "const": "url",
@@ -21782,6 +24659,12 @@
       "InputRules": {
         "additionalProperties": false,
         "properties": {
+          "fractionalDuration": {
+            "default": false,
+            "description": "Accept fractional video seconds within each output duration range.",
+            "title": "Fractionalduration",
+            "type": "boolean"
+          },
           "profile": {
             "description": "Model capability profile.",
             "maxLength": 100,
@@ -21827,6 +24710,20 @@
             "default": null,
             "description": "Whether speech generation requires an explicit service voice ID.",
             "title": "Voicerequired"
+          },
+          "defaultVoice": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service voice ID applied when a required selection is still empty.",
+            "title": "Defaultvoice"
           },
           "referencesAllowed": {
             "anyOf": [
@@ -21885,6 +24782,48 @@
             "title": "Videobytes",
             "type": "integer"
           },
+          "audioBytes": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum bytes per reference audio; omitted preserves the existing request budget.",
+            "title": "Audiobytes"
+          },
+          "referenceMediaMinSeconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Minimum duration of each reference video or audio clip.",
+            "title": "Referencemediaminseconds"
+          },
+          "referenceMediaSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum total reference duration, applied separately to video and audio.",
+            "title": "Referencemediaseconds"
+          },
           "requestBytes": {
             "description": "Maximum aggregate reference bytes per request.",
             "minimum": 0,
@@ -21897,7 +24836,8 @@
               "enum": [
                 "first_frame",
                 "reference",
-                "continuation"
+                "continuation",
+                "control"
               ],
               "type": "string"
             },
@@ -21912,6 +24852,28 @@
             },
             "title": "Imageoutputs",
             "type": "array"
+          },
+          "imageQualities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "auto",
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Supported image rendering qualities; omitted for models without quality control.",
+            "title": "Imagequalities"
           },
           "outputResolutions": {
             "default": [],
@@ -22079,6 +25041,19 @@
             },
             "title": "References",
             "type": "array"
+          },
+          "presetPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Image preset instructions frozen when the job is accepted.",
+            "title": "Presetprompt"
           }
         },
         "required": [
@@ -22387,6 +25362,35 @@
             "description": "Fixed provider-specific execution parameters.",
             "title": "Adapterparameters",
             "type": "object"
+          },
+          "agentRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Agent turn that submitted this job; omitted for jobs not submitted by an Agent.",
+            "title": "Agentrunid"
+          },
+          "agentCallId": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Tool call within that turn that submitted this job; the command ID derives from both.",
+            "title": "Agentcallid"
           }
         },
         "required": [
@@ -22632,6 +25636,68 @@
           "payload"
         ],
         "title": "JobRecoverCommand",
+        "type": "object"
+      },
+      "JobStatusQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "queryId": {
+            "description": "Caller-supplied query ID.",
+            "format": "uuid",
+            "title": "Queryid",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Owning project ID.",
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "job.status",
+            "description": "Read several generation jobs, optionally waiting for terminal states.",
+            "title": "Type",
+            "type": "string"
+          },
+          "objectIds": {
+            "default": [],
+            "description": "Generation job IDs; every unfinished project job when empty.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Objectids",
+            "type": "array"
+          },
+          "waitSeconds": {
+            "default": 0,
+            "description": "Wait for terminal states; zero returns immediately.",
+            "maximum": 300,
+            "minimum": 0,
+            "title": "Waitseconds",
+            "type": "number"
+          },
+          "until": {
+            "default": "all",
+            "description": "Return after every selected job or any job reaches a terminal state.",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queryId",
+          "projectId",
+          "type",
+          "objectIds",
+          "waitSeconds",
+          "until"
+        ],
+        "title": "JobStatusQuery",
         "type": "object"
       },
       "JsonValue": {},
@@ -22902,6 +25968,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -23022,6 +26102,7 @@
               "video-matting",
               "video-crop",
               "video-translation",
+              "video-mask-composite",
               "extract-audio",
               "audio-separation",
               "video-trim",
@@ -23342,6 +26423,105 @@
         "title": "MediaPublicationOutput",
         "type": "object"
       },
+      "ModelAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "configId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved model identity; null for an unsaved draft.",
+            "title": "Configid"
+          },
+          "modelId": {
+            "description": "Exact remote model identifier requested.",
+            "title": "Modelid",
+            "type": "string"
+          },
+          "identity": {
+            "description": "Opaque identity of the checked connection and model.",
+            "title": "Identity",
+            "type": "string"
+          },
+          "autoCheck": {
+            "description": "Effective service automatic-check preference.",
+            "title": "Autocheck",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Summary across the configured adapter operations.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable summary reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Earliest operation expiry in Unix milliseconds.",
+            "title": "Expiresat"
+          },
+          "revision": {
+            "description": "Projection version; changes on observations, identity changes and expiration.",
+            "title": "Revision",
+            "type": "string"
+          },
+          "operations": {
+            "description": "Exact operations consumed by the configured adapter.",
+            "items": {
+              "$ref": "#/$defs/OperationAvailability"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configId",
+          "modelId",
+          "identity",
+          "autoCheck",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt",
+          "revision",
+          "operations"
+        ],
+        "title": "ModelAvailability",
+        "type": "object"
+      },
       "ModelConfigPublic": {
         "additionalProperties": false,
         "description": "Application-level, never embedded in an editable project's credential data.",
@@ -23386,6 +26566,8 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23422,7 +26604,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -23442,6 +26626,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23469,6 +26654,31 @@
           "inputRules": {
             "$ref": "#/$defs/InputRules",
             "description": "Verified model input limits and output choices."
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service preference; omitted defaults to automatic for self-hosted connections.",
+            "title": "Capabilityautocheck"
+          },
+          "availability": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelAvailability"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Ephemeral observation, never persisted in project snapshots."
           }
         },
         "required": [
@@ -23532,6 +26742,8 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23568,7 +26780,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -23588,6 +26802,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23621,6 +26836,19 @@
             "default": null,
             "description": "Provider credential; omitted from public model records.",
             "title": "Apikey"
+          },
+          "capabilityAutoCheck": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Service automatic-check override; omission preserves the existing preference.",
+            "title": "Capabilityautocheck"
           }
         },
         "required": [
@@ -23682,6 +26910,8 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23718,7 +26948,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -23738,6 +26970,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23812,6 +27045,8 @@
             "enum": [
               "openai",
               "volcengine",
+              "higgsfield_open",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23848,7 +27083,9 @@
                 "items": {
                   "enum": [
                     "text",
-                    "image"
+                    "image",
+                    "video",
+                    "audio"
                   ],
                   "type": "string"
                 },
@@ -23868,6 +27105,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -24181,6 +27419,122 @@
         "title": "ObjectVersion",
         "type": "object"
       },
+      "OperationAvailability": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "description": "Canonical remote operation identifier.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "profile": {
+            "description": "Input and output mode used by the configured adapter.",
+            "title": "Profile",
+            "type": "string"
+          },
+          "method": {
+            "description": "Actual HTTP method used for submission.",
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "description": "Actual HTTP submission path.",
+            "title": "Path",
+            "type": "string"
+          },
+          "output": {
+            "description": "Output modality consumed by the adapter.",
+            "title": "Output",
+            "type": "string"
+          },
+          "status": {
+            "description": "Current evidence for this exact request.",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "Stable, localizable decision reason.",
+            "title": "Reasoncode",
+            "type": "string"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation completion time in Unix milliseconds.",
+            "title": "Checkedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Decision expiry in Unix milliseconds; recompute after expiry.",
+            "title": "Expiresat"
+          },
+          "declaration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityDeclaration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Request support independently expires from the short execution observation."
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CapabilityExecution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short-lived execution observation, separate from declared support."
+          },
+          "inputDetails": {
+            "default": [],
+            "description": "Known role and parameter facts for the actual request route; no saved configuration changes.",
+            "items": {
+              "$ref": "#/$defs/CapabilityInputDetail"
+            },
+            "title": "Inputdetails",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation",
+          "profile",
+          "method",
+          "path",
+          "output",
+          "status",
+          "reasonCode",
+          "checkedAt",
+          "expiresAt",
+          "inputDetails"
+        ],
+        "title": "OperationAvailability",
+        "type": "object"
+      },
       "PaletteData": {
         "additionalProperties": false,
         "properties": {
@@ -24278,7 +27632,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -24448,6 +27803,20 @@
             "pattern": "\\S",
             "title": "Name",
             "type": "string"
+          },
+          "defaultNameIndex": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Index of the automatically named initial project.",
+            "title": "Defaultnameindex"
           }
         },
         "required": [
@@ -24468,6 +27837,20 @@
             "pattern": "\\S",
             "title": "Name",
             "type": "string"
+          },
+          "defaultNameIndex": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Index for an automatically named initial project.",
+            "title": "Defaultnameindex"
           }
         },
         "required": [
@@ -25345,7 +28728,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -25685,7 +29069,8 @@
               "reference",
               "first_frame",
               "last_frame",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Role",
             "type": "string"
@@ -25980,6 +29365,214 @@
           "inputFingerprint"
         ],
         "title": "ResultVersion",
+        "type": "object"
+      },
+      "SegmentRunAnchor": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "anchor",
+            "description": "One independent generation anchor in the declared source shot.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "SegmentRunAnchor",
+        "type": "object"
+      },
+      "SegmentRunContinuation": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "continuation",
+            "description": "Generation requires the selected upstream result as a guide.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "upstreamItemId": {
+            "description": "Generation node providing the raw guide frames.",
+            "format": "uuid",
+            "title": "Upstreamitemid",
+            "type": "string"
+          },
+          "sourceFrames": {
+            "description": "Two distinct indices into the raw upstream result for destination frames 0 and 21, in that order.",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "maximum": 359,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "maximum": 359,
+                "minimum": 0,
+                "type": "integer"
+              }
+            ],
+            "title": "Sourceframes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "upstreamItemId",
+          "sourceFrames"
+        ],
+        "title": "SegmentRunContinuation",
+        "type": "object"
+      },
+      "SegmentRunGenerated": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceStart": {
+            "description": "First covered frame in the normalized working source.",
+            "minimum": 0,
+            "title": "Sourcestart",
+            "type": "integer"
+          },
+          "sourceEnd": {
+            "description": "Exclusive end of the covered interval in the normalized working source.",
+            "minimum": 1,
+            "title": "Sourceend",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "generated",
+            "description": "Use the retained result from a generation step.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "itemId": {
+            "description": "Generation canvas node that provides the result.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "shot": {
+            "description": "Identity of the inspected continuous shot used to determine guide dependencies.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Shot",
+            "type": "string"
+          },
+          "step": {
+            "description": "Independent anchor or guided continuation in this shot.",
+            "discriminator": {
+              "mapping": {
+                "anchor": "#/$defs/SegmentRunAnchor",
+                "continuation": "#/$defs/SegmentRunContinuation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SegmentRunAnchor"
+              },
+              {
+                "$ref": "#/$defs/SegmentRunContinuation"
+              }
+            ],
+            "title": "Step"
+          }
+        },
+        "required": [
+          "sourceStart",
+          "sourceEnd",
+          "kind",
+          "itemId",
+          "shot",
+          "step"
+        ],
+        "title": "SegmentRunGenerated",
+        "type": "object"
+      },
+      "SegmentRunPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/AssetRef",
+            "description": "Exact normalized working video whose entire frame range is delivered."
+          },
+          "fps": {
+            "description": "Integer frames per second of the normalized working video.",
+            "minimum": 1,
+            "title": "Fps",
+            "type": "integer"
+          },
+          "frameCount": {
+            "description": "Decoded frame count of the normalized working video.",
+            "minimum": 1,
+            "title": "Framecount",
+            "type": "integer"
+          },
+          "entries": {
+            "description": "Delivery intervals in source playback order.",
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "generated": "#/$defs/SegmentRunGenerated",
+                  "source": "#/$defs/SegmentRunSource"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/SegmentRunSource"
+                },
+                {
+                  "$ref": "#/$defs/SegmentRunGenerated"
+                }
+              ]
+            },
+            "maxItems": 101,
+            "minItems": 1,
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source",
+          "fps",
+          "frameCount",
+          "entries"
+        ],
+        "title": "SegmentRunPlan",
+        "type": "object"
+      },
+      "SegmentRunSource": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceStart": {
+            "description": "First covered frame in the normalized working source.",
+            "minimum": 0,
+            "title": "Sourcestart",
+            "type": "integer"
+          },
+          "sourceEnd": {
+            "description": "Exclusive end of the covered interval in the normalized working source.",
+            "minimum": 1,
+            "title": "Sourceend",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "source",
+            "description": "Retain these frames from the frozen working source.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceStart",
+          "sourceEnd",
+          "kind"
+        ],
+        "title": "SegmentRunSource",
         "type": "object"
       },
       "SelectionBox": {
@@ -26517,6 +30110,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -26933,6 +30540,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -27220,6 +30841,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -27616,6 +31251,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -28271,6 +31920,20 @@
             "title": "Outputid",
             "type": "string"
           },
+          "expectedOutputRevision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Current output node revision when appending a rendered version.",
+            "title": "Expectedoutputrevision"
+          },
           "title": {
             "default": "合成视频",
             "description": "User-visible title.",
@@ -28723,6 +32386,20 @@
             "description": "Whether edits to this object are blocked.",
             "title": "Locked",
             "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
           },
           "visible": {
             "default": true,
@@ -29279,6 +32956,20 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^(#[0-9a-fA-F]{6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Group background color in #RRGGBB format.",
+            "title": "Color"
+          },
           "visible": {
             "default": true,
             "description": "Whether this object is displayed.",
@@ -29776,7 +33467,8 @@
             "enum": [
               "first_frame",
               "reference",
-              "continuation"
+              "continuation",
+              "control"
             ],
             "title": "Videomode",
             "type": "string"
@@ -29793,7 +33485,7 @@
               }
             ],
             "default": null,
-            "description": "Duration in seconds.",
+            "description": "Duration in seconds; fractional values require model inputRules.fractionalDuration. Generated frames may be aligned by the model.",
             "title": "Durationseconds"
           },
           "aspectRatio": {
@@ -29945,7 +33637,9 @@
             "description": "Voice registry protocol.",
             "enum": [
               "vllm_omni",
-              "moss"
+              "moss",
+              "minimax",
+              "zhipu"
             ],
             "title": "Provider",
             "type": "string"
@@ -29960,6 +33654,12 @@
           "requiresTranscript": {
             "description": "Registered voice must have a reference transcript.",
             "title": "Requirestranscript",
+            "type": "boolean"
+          },
+          "acceptsTranscript": {
+            "default": false,
+            "description": "Registry stores an optional reference transcript when one is supplied.",
+            "title": "Acceptstranscript",
             "type": "boolean"
           },
           "requiresReferenceAudio": {
@@ -30036,6 +33736,7 @@
           "provider",
           "connectionId",
           "requiresTranscript",
+          "acceptsTranscript",
           "requiresReferenceAudio",
           "supportsUploadedVoices",
           "referenceEmbeddingDimension",
@@ -30127,6 +33828,61 @@
           "refText"
         ],
         "title": "VoiceSelection",
+        "type": "object"
+      },
+      "WorkflowClip": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "description": "Generation canvas node providing the raw video.",
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "inFrame": {
+            "description": "First retained frame in playback order.",
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Inframe",
+            "type": "integer"
+          },
+          "outFrame": {
+            "description": "Exclusive end of the retained frames.",
+            "maximum": 4096,
+            "minimum": 1,
+            "title": "Outframe",
+            "type": "integer"
+          },
+          "reverse": {
+            "default": false,
+            "description": "Reverse the raw window before keeping the selected frames.",
+            "title": "Reverse",
+            "type": "boolean"
+          },
+          "frameLimit": {
+            "anyOf": [
+              {
+                "maximum": 4096,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional cap on the raw window before reversal.",
+            "title": "Framelimit"
+          }
+        },
+        "required": [
+          "itemId",
+          "inFrame",
+          "outFrame",
+          "reverse",
+          "frameLimit"
+        ],
+        "title": "WorkflowClip",
         "type": "object"
       }
     },
@@ -30296,6 +34052,7 @@
             "canvas.createGeneration": "#/$defs/CanvasCreateGenerationCommand",
             "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
             "canvas.hide": "#/$defs/CanvasHideCommand",
+            "canvas.layoutRuns": "#/$defs/CanvasLayoutRunsCommand",
             "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
             "canvas.move": "#/$defs/CanvasMoveCommand",
             "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
@@ -30309,6 +34066,8 @@
             "generationSpec.restore": "#/$defs/SpecRestoreCommand",
             "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
             "generationSpec.update": "#/$defs/SpecUpdateCommand",
+            "group.publishRun": "#/$defs/GroupPublishRunCommand",
+            "group.saveRunPlan": "#/$defs/GroupSavePlanCommand",
             "history.redo": "#/$defs/HistoryRedoCommand",
             "history.undo": "#/$defs/HistoryUndoCommand",
             "job.cancel": "#/$defs/JobCancelCommand",
@@ -30359,6 +34118,12 @@
             "$ref": "#/$defs/CanvasCreateGenerationCommand"
           },
           {
+            "$ref": "#/$defs/GroupSavePlanCommand"
+          },
+          {
+            "$ref": "#/$defs/GroupPublishRunCommand"
+          },
+          {
             "$ref": "#/$defs/CanvasShowCommand"
           },
           {
@@ -30366,6 +34131,9 @@
           },
           {
             "$ref": "#/$defs/CanvasUpdateCommand"
+          },
+          {
+            "$ref": "#/$defs/CanvasLayoutRunsCommand"
           },
           {
             "$ref": "#/$defs/CanvasHideCommand"
@@ -30466,6 +34234,7 @@
             "canvas.versions": "#/$defs/VersionsQuery",
             "generationSpec.versions": "#/$defs/VersionsQuery",
             "job.get": "#/$defs/ObjectQuery",
+            "job.status": "#/$defs/JobStatusQuery",
             "object.get": "#/$defs/ObjectQuery",
             "project.get": "#/$defs/ProjectQuery"
           },
@@ -30489,6 +34258,9 @@
           },
           {
             "$ref": "#/$defs/CanvasStatusQuery"
+          },
+          {
+            "$ref": "#/$defs/JobStatusQuery"
           },
           {
             "$ref": "#/$defs/AssetPreviewQuery"

@@ -1,6 +1,7 @@
-import type { AssetRef, TimelineTextOverlay } from "../contracts/generated.ts";
+import type { AssetRef, GroupCanvasItem, TimelineTextOverlay } from "../contracts/generated.ts";
 
 import type { VoiceSelection } from "../backend/voices.ts";
+import type { ImageParameters } from "../contracts/generated.ts";
 import { indexNodes, ancestors, isNodeLocked } from "./hierarchy.ts";
 import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import type { CanvasToolTask } from "./toolCatalog.ts";
@@ -59,7 +60,7 @@ export interface GenerationSettings {
   prompt: string;
   count?: number;
   audioEnabled?: boolean;
-  videoMode?: "reference" | "first-last" | "continuation";
+  videoMode?: "reference" | "first-last" | "continuation" | "control";
   firstFrameNodeId?: string;
   lastFrameNodeId?: string;
   frameSlotsInitialized?: boolean;
@@ -73,7 +74,13 @@ export interface GenerationSettings {
   scoreMode?: "melody" | "full";
   /** Music with a reference recording: cap the length at the recording's own (unset follows it). */
   durationFromReference?: boolean;
-  imagePreset?: "none" | "product-views";
+  /** Free creation (
+one), a catalog preset used as a prompt skill, or the
+   * legacy product-views generation preset. */
+  imagePreset?: string;
+  /** The preset's alternate framing; only meaningful for presets offering it. */
+  faceEmphasis?: boolean;
+  imageQuality?: ImageParameters["quality"];
   /** A model configured in the local API; catalog models leave it unset. */
   modelConfigId?: string;
 }
@@ -252,6 +259,9 @@ export interface CanvasNode {
   width: number;
   height: number;
   locked?: boolean;
+  /** Group background color (#rrggbb); absent means the default group style. */
+  color?: string;
+  autoLayout?: NonNullable<GroupCanvasItem["autoLayout"]>;
   zIndex?: number;
   /** Child positions are relative to their parent's top-left corner. */
   parentId?: string;
@@ -277,6 +287,7 @@ export interface CanvasDocument {
   version: 1;
   id: string;
   title: string;
+  defaultNameIndex?: number | null;
   nodes: CanvasNode[];
   /** Logical sources remain usable when their presentation is hidden. */
   hiddenNodes?: CanvasNode[];
@@ -474,6 +485,8 @@ export function createNode(
 export type NodePatch = Partial<Omit<CanvasNode, "id" | "data">> & {
   data?: Partial<CanvasNodeData>;
 };
+export const TEXT_NODE_MIN_SIZE = { width: 200, height: 120 };
+
 export type CanvasCommand =
   | {
       type: "add-nodes";
@@ -729,13 +742,17 @@ function applyCanvasCommand(
       command.height <= 0
     )
       throw new Error(tNow("errors.model.nodeSize"));
+    const width = source.type === "text"
+      ? Math.max(TEXT_NODE_MIN_SIZE.width, command.width) : command.width;
+    const height = source.type === "text"
+      ? Math.max(TEXT_NODE_MIN_SIZE.height, command.height) : command.height;
     const dx = source.position.x - position.x,
       dy = source.position.y - position.y;
     if (
       !dx &&
       !dy &&
-      source.width === command.width &&
-      source.height === command.height
+      source.width === width &&
+      source.height === height
     )
       return document;
     return {
@@ -745,8 +762,8 @@ function applyCanvasCommand(
           return {
             ...node,
             position: { ...position },
-            width: command.width,
-            height: command.height,
+            width,
+            height,
           };
         // Resizing the frame changes its local origin, not its children's world positions.
         // This coordinate compensation also applies to locked children.

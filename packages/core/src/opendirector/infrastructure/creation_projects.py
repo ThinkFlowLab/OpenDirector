@@ -80,14 +80,16 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
     def _checkpoint(self, stage):
         """Fault-injection boundary. Never participates in production decisions."""
 
-    def _lease(self, db, project_id, path, session):
+    def _lease(self, db, project_id, path, session, *, browser_only=False):
         if session is None:
             raise ProjectError('修改工程需要已打开的会话。', 409)
         identifier(session)
-        lease = db.execute('SELECT path FROM sessions WHERE id=? AND project_id=? AND expires>?',
-                           (session, str(project_id), time.time())).fetchone()
+        agent_key = session if browser_only else self.local.agent_session_key(session)
+        lease = db.execute('SELECT path FROM sessions WHERE id IN (?,?) AND project_id=? AND expires>?',
+                           (session, agent_key, str(project_id), time.time())).fetchone()
         if lease is None:
-            raise ProjectError('工程已关闭或会话已过期，请重新打开后保存。', 409)
+            # A stable code lets the page renew its lease and resend instead of failing every save.
+            raise ProjectError('工程已关闭或会话已过期，请重新打开后保存。', 409, code='session_expired')
         if lease['path'] != str(path):
             raise ProjectError('工程目录已在应用外改名或移动，请复制未保存内容并重新打开。', 409)
 
@@ -119,17 +121,41 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
                 return ViewState.model_validate(read_json(file))
             return None if missing_ok else ViewState(projectId=project_id, clientId=client_id)
 
-    def open(self, project_id, session):
+    def open_canvas(
+        self, project_id: UUID | str, session: str, *, allow_preview: bool, persistent: bool = False,
+    ) -> tuple[ProjectSnapshot, dict[str, str | None]]:
         with self.local.transaction() as db:
             self._recover()
             path, manifest = self._find(db, project_id)
-            self.local._open(db, dict(id=str(project_id), path=str(path)), session)
+            project = dict(id=str(project_id), path=str(path))
+            if allow_preview:
+                editor = self.local.editor(db, str(project_id))
+                if editor and editor['id'] != session:
+                    db.execute("DELETE FROM sessions WHERE id=?", (session,))
+                else:
+                    self.local.acquire_edit_lease(db, project, session, persistent=True)
+            else:
+                self.local.acquire_edit_lease(db, project, session, persistent=persistent)
+            state = self.local.editing_state(db, str(project_id), session)
             record, validated = self._current_record(db, project_id, path, manifest)
             if not validated:
                 # The canvas is open now; prove the ancestry in the background
                 # so the first autosave does not replay it under the lock.
                 self._schedule_warm(path, manifest)
-            return record.snapshot.model_copy(deep=True)
+            return record.snapshot.model_copy(deep=True), state
+
+    def open(self, project_id: UUID | str, session: str, *, persistent=False) -> ProjectSnapshot:
+        snapshot, _ = self.open_canvas(project_id, session, allow_preview=False, persistent=persistent)
+        return snapshot
+
+    def editing_state(self, project_id, session):
+        with self.local.transaction() as db:
+            return self.local.editing_state(db, str(project_id), session)
+
+    def take_edit_ownership(self, project_id, session):
+        with self.local.transaction() as db:
+            path, _ = self._find(db, project_id)
+            return self.local.take_edit_ownership(db, dict(id=str(project_id), path=str(path)), session)
 
     def heartbeat(self, session, project_id):
         self.open(project_id, session)
@@ -156,7 +182,7 @@ class CreationProjects(ProjectCatalog, CommitLog, CommitPublication):
             self.root.mkdir(exist_ok=True)
             sync_directory(self.root.parent)
             self.local._conflict(self.root, name)
-            snapshot = ProjectSnapshot(project=Project(id=command.projectId, name=name), eventCursor=1)
+            snapshot = ProjectSnapshot(project=Project(id=command.projectId, name=name, defaultNameIndex=command.payload.defaultNameIndex), eventCursor=1)
             changed = object_changes(None, snapshot, command)
             record = self._make_record(command, None, snapshot, changed, source)
             return self._publish(CommitIntent(fromName=None, toName=name, beforeFingerprint=None, record=record))

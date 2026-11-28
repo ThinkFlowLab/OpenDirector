@@ -1,28 +1,30 @@
-# 视频模型能力配置
+# Video model capability configuration
 
-模型接入信息与输出能力分别保存于本机后端。能力是声明数据，不包含脚本，也不会修改模型权重、推理步数或服务器显存。当前实现独立于其他产品的代码。
+Model connection details and output capabilities are stored separately in the local backend. Capabilities are declarative data: they contain no scripts and do not modify model weights, sampling steps or server memory. This implementation is independent of other products' code.
 
-## 界面操作
+Generation history shows the requested video duration and the measured result duration separately. A 4-second FastH3 request that preserves the last anchor may produce 107 frames at 24 fps, displayed as a 4.458-second result.
 
-1. 打开“模型接入”，添加或编辑视频模型，填写地址、Model ID 和鉴权信息。
-2. 点击默认折叠的“视频适配方式”展开高级配置。对 `/videos` 接口选择适配方式。FastH3 使用八步和多素材参考；原生 H3 支持首帧、素材参考及接续；通用适配仅发送文本和单张首帧，不携带 H3 专属的采样参数。模型使用自定义名称时，应明确选择适配方式。
-3. 已知模型可点击“载入适配预设”。未声明能力的模型只显示“自动”和“服务默认时长”。
-4. 开启“自定义输出规格”，每档填写分辨率、支持时长和可选横屏像素宽高。时长支持 `4-10,15`，即 4 至 10 秒以及 15 秒。不同档位可填写不同的时长集合。
-5. 设置默认分辨率、默认时长和像素对齐步长，保存。是否需要填写像素尺寸取决于提交参数：发送明确宽高的适配需要配置尺寸；发送分辨率档位、由服务端确定宽高的适配可以留空。已知 H3 档位也可使用适配器内置的尺寸。H3 使用 32 像素对齐，现有适配仍限定 4–15 秒。
+## Interface
 
-切换模型后使用新模型的默认分辨率；兼容的已选时长保留，否则采用新模型的默认时长。改变时长后，界面仅显示该时长支持的分辨率；不适用的原选项回到默认值或自动。后端在接受任务前再次校验，不会将不支持的组合悄悄改成其他时长。
+1. Open "Model connections", add or edit a video model, and fill in the base URL, Model ID and authentication.
+2. Expand the collapsed "Video adapter" section for advanced settings. Choose the adapter for the `/videos` API. FastH3 uses eight steps and multi-asset references; each generation draws a new seed, keeps it with the job and reuses it when the job is recovered. FastH3 first/last frames (`fasth3_dual`) offers two generation modes on one model: its reference mode matches FastH3, while first/last-frame mode takes at most one first-frame and one last-frame anchor image, submits `fl2va` with `res_multistep` at 20 steps, and lands on the native 17n+5 frame grid, keeping the tail anchor at the grid's last frame instead of trimming to the requested duration. First/last-frame mode requires both anchors, rejects video and audio references, and is not combined with multi-asset references. Native H3 supports a first frame, asset references and continuation. The generic adapter sends only text and a single first frame, without H3 sampling parameters. When a model uses a custom name, choose the adapter explicitly.
+3. Known models offer "Load adapter preset". Models without a declared capability show only "Auto" and "Service default duration".
+4. Enable "Custom output specs" and fill in the resolution, supported durations and optional landscape pixel width and height for each tier. Durations accept `4-10,15`, meaning 4 to 10 seconds plus 15 seconds; tiers may declare different duration sets.
+5. Set the default resolution, default duration and pixel alignment step, then save. Whether pixel sizes are required depends on the submitted parameters: adapters that send an explicit width and height need sizes, while adapters that send a resolution tier and let the service decide may leave them empty. Known H3 tiers may also use the adapter's built-in sizes. H3 aligns to 32 pixels and existing adapters stay within 4–15 seconds.
 
-参考素材决定画幅，显式分辨率决定输出尺寸；接续保留上一段的尺寸，仅使用自动。已有供应商的模式限制继续生效，例如 Seedance 图片参考模式的分辨率限制。自定义能力不能改变上传协议、开放未实现的参考模式，或突破原生适配的限制。
+Switching models applies the new model's default resolution; a compatible selected duration is kept, otherwise the new default applies. After a duration change, the interface lists only resolutions that support it and resets inapplicable choices to default or auto. The backend validates again before accepting a job and never silently changes an unsupported combination into another duration.
 
-关闭“自定义输出规格”并保存可恢复适配预设。编辑时密钥留空会保留已保存的密钥，能力信息中不包含密钥。已有配置读取时保留此前适配方式，不会因为模型别名而自动切换请求格式；新增未知模型则采用通用方式。
+Reference material decides the frame; an explicit resolution decides the output size; continuation keeps the previous clip's size and uses only auto. Existing provider mode restrictions still apply, such as the resolution limits of Seedance image-reference mode. Custom capabilities cannot change the upload protocol, enable unimplemented reference modes, or exceed a native adapter's limits.
 
-## 读取服务声明
+Disabling "Custom output specs" and saving restores the adapter presets. Leaving the key empty while editing keeps the saved key; capability information never contains keys. Existing configurations keep their previous adapter and do not switch request formats because of a model alias; a new unknown model uses the generic adapter.
 
-“读取服务声明”只请求配置服务的 `GET /models`（基础地址通常已含 `/v1`），不创建生成任务，不保存配置。用户确认并保存后才应用。它要求模型列表中对应 **精确 Model ID** 的条目包含 `videoCapabilities`。
+## Reading a service declaration
 
-这是 OpenDirector 的可选扩展约定，并非 OpenAI 或 vLLM 标准保证的字段。普通 `/models` 列表只有模型名称时，不会据此推断分辨率或时长，仍需手动填写。无需为了使用本功能修改推理服务器；也可完全使用本机配置。
+"Read service declaration" only requests `GET /models` from the configured service (the base URL usually already ends with `/v1`); it creates no generation job and saves nothing. It applies only after the user confirms and saves. It requires the entry with the exact Model ID to include `videoCapabilities`.
 
-声明示例（仅演示格式，需替换成服务真实支持的参数）：
+This is an optional OpenDirector extension, not a field guaranteed by OpenAI or vLLM. When the `/models` list only has model names, no resolution or duration is inferred and manual entry is still required. No inference server change is needed to use this feature, and local configuration alone is also fine.
+
+Declaration example (format only; replace it with the parameters the service really supports):
 
 ```json
 {
@@ -43,38 +45,40 @@
 }
 ```
 
-每份声明最多 20 档；时长为 1–60 秒内的整数，具体可用范围取决于适配和服务。宽高须同时填写或留空；横屏宽不小于高，边长 64–8192，且满足对齐步长。默认分辨率和时长必须构成有效组合，分辨率名称不能重复。
+Each declaration allows at most 20 tiers; durations are integers from 1 to 60, and the usable range depends on the adapter and the service. Width and height are filled together or left empty; landscape width is not smaller than height, edges are 64–8192, and the values match the alignment step. The default resolution and duration must form a valid combination, and resolution names must not repeat.
 
-读取失败、字段无效或服务未提供声明时保留原配置。已保存的密钥只会在基础地址完全一致时复用；读取新地址需要重新输入密钥。
+A failed read, invalid fields or a missing declaration keeps the current configuration. A saved key is reused only when the base URL is identical; reading a new address requires the key again.
 
-## 扩展边界
+## Extension boundary
 
-已有适配协议下接入新模型、修改输出档位，只需配置。全新服务若使用不同的上传、提交、轮询或结果下载协议，仍需开发独立适配器。界面声明不会保证远端模型、账户权限或硬件能完成所配置的请求。
+Adding a model under an existing adapter protocol, or changing output tiers, only needs configuration. A brand-new service that uses different upload, submit, poll or result-download protocols still needs its own adapter. Interface declarations do not guarantee that the remote model, account permissions or hardware can complete the configured request.
 
-## MiniMax 官方视频 V2
+## MiniMax official video V2
 
-添加视频服务时选择“MiniMax 官方视频 V2”，基础地址填写 `https://api.minimax.cn/v2`，使用 Bearer API Key。模型列表来自内置声明，载入列表不验证密钥或账户权限。连接继续由 `providerId` 管理，工程引用模型配置自身的 `id`；同名自部署模型使用独立连接与 `vllm_omni` 协议。
+When adding a video service, choose "MiniMax official video V2", enter `https://api.minimax.cn/v2` as the base URL and use a Bearer API key. The model list comes from built-in declarations; loading the list does not verify the key or account permissions. The connection is still managed by `providerId`, while the project references the model configuration's own `id`; a self-hosted model with the same name uses a separate connection and the `vllm_omni` protocol.
 
-该适配接入 `MiniMax-H3`、`MiniMax-H3-Highspeed`、`MiniMax-H3-Lite` 和 `MiniMax-H3-Max`，按各型号限制输出档位与整数时长。首尾帧模式支持明确选择首帧、尾帧或两者；不选择帧时按文本生成。参考模式支持图片、视频和音频，包括单独音频参考。首尾帧不能与多模态参考混用。首尾帧输出比例由服务按输入决定；文本生成的自动比例解析为 `16:9`。不接受自定义像素尺寸或缓存续接。
+This adapter serves `MiniMax-H3`, `MiniMax-H3-Highspeed`, `MiniMax-H3-Lite` and `MiniMax-H3-Max`, limiting output tiers and integer durations per model. First/last-frame mode lets you choose a first frame, a last frame or both; with no frame selected it generates from text. Reference mode supports images, video and audio, including a standalone audio reference. First/last frames cannot be mixed with multimodal references. The first/last-frame output ratio is decided by the service from the inputs; text-generation auto resolves to `16:9`. Custom pixel sizes and cached continuation are not accepted.
 
-本地素材按实际字节编码为 Base64，不上传到额外托管服务，也不自动压缩。支持 PNG、JPEG、WEBP 图片，MP4、MOV 视频和 WAV、MP3 音频；尺寸、数量、单文件大小、时长、视频帧率与编码在提交前检查。编码后的请求不得超过官方请求预算，超限明确拒绝。URL 与 `mm_file://` 输入、HEIC/HEIF 和回调通知不属于此适配范围。
+Local assets are encoded as Base64 from their actual bytes, are not uploaded to any extra hosting service, and are not compressed automatically. PNG, JPEG and WEBP images, MP4 and MOV video, and WAV and MP3 audio are supported; dimensions, counts, per-file size, duration, frame rate and codec are checked before submission. The encoded request must stay within the official request budget, and an over-budget request is rejected explicitly. URL and `mm_file://` inputs, HEIC/HEIF and callback notifications are outside this adapter's scope.
 
-任务接受后固定模型、参数、素材和参考用途。已知远端任务恢复时继续查询原任务；提交结果未知时不自动重发。结果下载为本地素材并进入既有候选与采用流程，CDN 下载不携带 API Key。停止本地执行不代表远端取消成功；本适配未接入远端取消，任务可能继续执行并计费。
+An accepted job freezes its model, parameters, media and reference purposes. For a known remote task, recovery keeps querying the original task; an unknown submission is not resent automatically. Results download as local assets and enter the existing candidate and adoption flow; CDN downloads do not carry the API key. Stopping local execution does not mean the remote task was cancelled — this adapter does not implement remote cancellation, so the task may keep running and billing.
 
-协议依据：[创建任务](https://platform.minimax.cn/docs/api-reference/video-generation-v2-create)、[查询任务](https://platform.minimax.cn/docs/api-reference/video-generation-v2-query)。真实服务调用和生成质量需要使用已配置账户单独验证。
+Protocol references: [create task](https://platform.minimax.cn/docs/api-reference/video-generation-v2-create), [query task](https://platform.minimax.cn/docs/api-reference/video-generation-v2-query). Real service calls and generation quality need to be verified separately with a configured account.
 
-## 提供商与逐模型设置
+## Providers and per-model settings
 
-可灵 4.0 使用独立的 `kling_video` 协议，按文生、首尾帧和图片参考选择对应官方提交路径，共用现有任务查询、恢复和结果采用流程。固定能力由后端发布。`kling-4.0` 支持 720P / 1080P、3–30 秒及首尾帧；`kling-4.0-flash` 支持 720P、3–20 秒和首帧，不支持尾帧。两个型号均支持图片参考与原生音频，不填写自定义像素尺寸。接入与输入限制见[中文指南](kling-video.zh-CN.md)和[English guide](kling-video.md)。
+Higgsfield Open supports `sand/magi-2` through one video connection: text, first/last frames and mixed image/video/audio references. Output is 1080p at 4–30 seconds with optional generated audio. See the [MAGI-2 guide](higgsfield-magi-2.md) for setup, input limits and recovery.
 
-MiniMax 官方视频提供四个型号，新增服务时默认全部勾选，保存后才启用；编辑已有服务时保留原有勾选。标准 H3 支持 768P / 2K、4—15 秒；Highspeed 和 Lite 支持 480P / 768P、4—15 秒；Max 支持 480P / 768P、5—15 秒。各型号的输出档位与时长由后端分别校验。
+Kling 4.0 uses the separate `kling_video` protocol and picks the official submit path for text, first/last frames and image references, sharing the existing task query, recovery and result-adoption flow. Its fixed capabilities are published by the backend. `kling-4.0` supports 720P / 1080P, 3–30 seconds and first/last frames; `kling-4.0-flash` supports 720P, 3–20 seconds and a first frame, without a last frame. Both models support image references and native audio, and do not accept custom pixel sizes. Setup and input limits are in the [English guide](kling-video.md) and the [Chinese guide](kling-video.zh-CN.md).
 
-添加服务时先选择提供商。提供商列表分为“自定义 API”和“vLLM-Omni 兼容”两组，各组只列出自身支持的接入类型。视频页列出 MiniMax 官方视频、可灵官方视频、火山方舟 / Agent Plan，以及 “vLLM-Omni 兼容”分组；“vLLM-Omni 兼容”分组内细分视频接口、分割接口和深度接口。选中后确定协议与接入方式，表单不再提供全局协议列表进行二次分类。高级连接设置用于填写地址等连接参数；自部署地址由用户填写。MiniMax 对话预设使用 [官方 OpenAI 兼容地址](https://platform.minimax.cn/docs/api-reference/text-openai-api)，视频预设使用视频 V2 协议。
+MiniMax official video offers four models; adding a service selects all of them by default, and they become active after saving. Editing an existing service keeps the previous selection. Standard H3 supports 768P / 2K and 4–15 seconds; Highspeed and Lite support 480P / 768P and 4–15 seconds; Max supports 480P / 768P and 5–15 seconds. Output tiers and durations are validated per model by the backend.
 
-同类别、同地址与协议下存在已保存连接时，可以明确选择复用，以保留密钥和模型身份；不复用则新建独立连接。手动添加和获取列表可以交替使用，获取结果仍需勾选，已有选择不会因列表刷新消失。
+When adding a service, choose a provider first. The provider list is split into "Custom API" and "vLLM-Omni compatible", and each group lists only the connection types it supports. The video page lists MiniMax official video, Kling official video, Volcengine Ark / Agent Plan, and the "vLLM-Omni compatible" group, which contains video, segmentation and depth APIs. Selecting an entry fixes the protocol and connection type, so the form no longer offers a global protocol list for a second classification. Advanced connection settings hold parameters such as the address; self-hosted addresses are entered by the user. The MiniMax chat preset uses the [official OpenAI-compatible endpoint](https://platform.minimax.cn/docs/api-reference/text-openai-api), and the video preset uses the video V2 protocol.
 
-图片页的 “vLLM-Omni 兼容”分组包含图片接口和分割接口；音频页包含语音合成、音乐生成和扒谱接口。各项直接确定对应协议，不再显示全局协议选择。对话、图片、音频页的“OpenAI 兼容”统一位于“自定义 API”分组首项，合并官方 OpenAI 与兼容服务接入；默认填写官方地址，地址与鉴权可编辑。
+When a saved connection already exists for the same category, address and protocol, you may explicitly reuse it to keep the key and model identity; otherwise a separate connection is created. Manual entries and fetched lists can be mixed, fetched results still need to be selected, and existing selections survive a list refresh.
 
-已选模型各自显示能力卡片。对话模型独立声明图片理解；视频模型独立配置适配方式和输出规格，官方 H3 与可灵展示后端发布的固定能力。编辑一个模型不会批量覆盖其他模型的能力。保存只保存配置，不执行推理测试，也不自动切换当前创作模型；对话模型可单独执行连通性测试。
+The image page's "vLLM-Omni compatible" group holds image and segmentation APIs; the audio page holds speech synthesis, music generation and transcription APIs. Each entry fixes its protocol, so no global protocol choice is shown. "OpenAI compatible" on the chat, image and audio pages sits first in the "Custom API" group and merges official OpenAI with compatible services; it defaults to the official address, and both address and authentication are editable.
 
-首尾帧引用使用图片素材与 `role=first_frame` / `last_frame`，不填写 `subjectRole`。`subjectRole` 表示主体素材槽位，不表示视频首帧。明确指定的首尾帧若会被引用策略过滤，提交会返回 `reference_invalid`，不接受任务或退化为文生视频；未配置首尾帧的文生视频仍然允许。
+Each selected model shows its own capability card. Chat models declare image understanding independently; video models configure the adapter and output specs per model, while official H3 and Kling show fixed backend capabilities. Editing one model never overwrites the capabilities of another. Saving stores configuration only: it runs no inference test and does not switch the current creation model; chat models can run a connectivity test separately.
+
+First/last-frame references use image assets with `role=first_frame` / `last_frame` and do not fill `subjectRole`, which marks a subject-media slot rather than a video's first frame. If an explicitly assigned frame would be filtered by the reference policy, submission returns `reference_invalid` and neither accepts the task nor degrades it to text-to-video; text-to-video without frames is still allowed. `fasth3_dual`'s first/last-frame mode requires both anchors: a missing anchor, or an attached audio or video reference, is rejected without creating a job.

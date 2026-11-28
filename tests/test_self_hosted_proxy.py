@@ -12,6 +12,9 @@ from opendirector.integrations.http_settings import trust_environment
 from opendirector.integrations.providers import GenerationProviders
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.mark.parametrize('base, equivalent', [
     ('http://8.92.9.154:8094/v1', 'http://8.92.9.154:8094/videos/id/content'),
     ('http://192.168.1.20:8093/v1', 'http://192.168.1.20:8093/videos/id/content'),
@@ -73,7 +76,7 @@ def test_all_model_kinds_submit_resume_and_cancel_use_direct_connection(monkeypa
         flags.append(kwargs['trust_env'])
         return async_client(**kwargs)
     monkeypatch.setattr(httpx, 'AsyncClient', client)
-    prepared = {'prompt': 'test', 'images': [], 'audios': []}
+    prepared = {'prompt': 'test', 'images': [], 'audios': [], 'continueSize': None}
     monkeypatch.setattr('opendirector.integrations.providers.generation_references', lambda *args: prepared)
     monkeypatch.setattr('opendirector.integrations.providers.references', lambda *args: [])
     monkeypatch.setattr('opendirector.integrations.vllm_omni.generation_references', lambda *args: prepared)

@@ -7,9 +7,28 @@ explains why a case was skipped.
 import pytest
 import socket
 
+pytest_plugins = ['ci_hardware', 'ci_profile']
+
 from opendirector.wiring import configure_runtime
 
 configure_runtime()
+
+
+@pytest.fixture(autouse=True)
+def optional_capability_endpoint(monkeypatch):
+    """Existing provider doubles predate discovery: never query real hosts.
+
+    Capability tests supply their own transport, including the explicit HTTP
+    transport used by the loopback integration test.
+    """
+    import httpx
+    from opendirector.integrations.capability_probe import CapabilityProbe
+    original = CapabilityProbe.__init__
+    def initialize(self, *args, **kwargs):
+        if kwargs.get('transport') is None:
+            kwargs['transport'] = httpx.MockTransport(lambda request: httpx.Response(404))
+        original(self, *args, **kwargs)
+    monkeypatch.setattr(CapabilityProbe, '__init__', initialize)
 
 
 @pytest.fixture

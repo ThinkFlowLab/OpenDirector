@@ -9,12 +9,13 @@ from typing import Awaitable, Callable
 
 from opendirector.application.tool_context import Output, Source, ToolContext
 from opendirector.application.tool_image_edits import (
-    PRESETS, dynamic_poster, image_hd, image_presets, inpainting_remove, lighting, multi_size,
+    dynamic_poster, image_hd, image_presets, inpainting_remove, lighting, multi_size,
     outpaint, panorama, product_replacement, smart_edit, view_control,
 )
 from opendirector.application.tool_image_segments import cutout, layer_decompose, select_image_objects
+from opendirector.domain.image_presets import PRESETS, preset_instructions
 from opendirector.application.tool_video_recipes import (
-    AUDIO_MODES, audio_separation, depth_capture, frame_interpolation, partial_reshoot,
+    AUDIO_MODES, audio_separation, depth_capture, mask_composite, frame_interpolation, partial_reshoot,
     subtitle_erasure, video_edit, video_matting, video_upscale,
 )
 
@@ -44,6 +45,22 @@ def _select(key, label, options, default=None, required=True):
         value['default'] = default
     return value
 
+
+def _preset_select():
+    """Preset options plus the instructions, so the composer can apply the same
+    text as a prompt skill instead of keeping a second copy in the frontend."""
+    options = []
+    for key, value in PRESETS.items():
+        option = {'value': key, 'label': value.title, 'prompts': list(value.prompts),
+                  'textPrompts': list(value.text_prompts), 'size': list(value.size)}
+        if key == 'four-view':
+            option['textPrompt'] = value.text_prompts[0]
+            option['faceEmphasisPrompt'] = preset_instructions(key, True)[0]
+            option['faceEmphasisTextPrompt'] = preset_instructions(key, True, has_reference=False)[0]
+        options.append(option)
+    return {'key': 'preset', 'label': '预设', 'type': 'select', 'required': True, 'default': 'three-view',
+            'options': options}
+
 TOOLS: dict[str, ToolSpec] = {item.id: item for item in [
     ToolSpec('smart-edit', ('image',), _needs('image.edit'), smart_edit),
     ToolSpec('outpaint', ('image',), _needs('image.edit'), outpaint),
@@ -59,7 +76,8 @@ TOOLS: dict[str, ToolSpec] = {item.id: item for item in [
     ToolSpec('panorama', ('image',), _needs('image.edit'), panorama,
              (_select('resolution', '清晰度', [('2K', '2K'), ('4K', '4K')], '2K'),)),
     ToolSpec('image-presets', ('image',), _needs('image.edit'), image_presets,
-             (_select('preset', '预设', [(key, value.title) for key, value in PRESETS.items()], 'three-view'),)),
+             (_preset_select(),
+              {'key': 'faceEmphasis', 'label': '脸部强调', 'type': 'boolean', 'required': False})),
     ToolSpec('multi-size', ('image',), _needs('image.edit'), multi_size),
     ToolSpec('product-replacement', ('image',), _needs('image.edit'), product_replacement),
     ToolSpec('dynamic-poster', ('image',), _needs('video.first_frame'), dynamic_poster),
@@ -83,7 +101,11 @@ TOOLS: dict[str, ToolSpec] = {item.id: item for item in [
              note='智能拆分识别人物、动物、车辆、商品等常见对象；按描述拆分可写多个对象，用逗号分隔。'
                   '接入图片编辑模型时会补全背景。'),
     ToolSpec('video-matting', ('video',), _needs('video.matting'), video_matting,
-             note='按描述跟踪对象（默认人物），多个对象用逗号分隔；透明背景输出带透明通道的 WebM。'),
+             note='按描述跟踪对象（默认人物），多个对象用逗号分隔；透明背景输出带透明通道的 WebM；遮罩输出黑底白色对象。'),
+    # Two video sources: the content first, then its mask (e.g. depth + person mask for FastH3 结构控制).
+    ToolSpec('video-mask-composite', ('video',), _needs(), mask_composite,
+             ({'key': 'stretch', 'label': '拉伸明暗范围', 'type': 'boolean', 'default': True, 'required': False},),
+             note='本地处理：保留内容视频在遮罩白色区域内的画面，其余变黑；可把遮罩内的明暗拉伸到完整范围（适合人物深度控制视频）。'),
     ToolSpec('video-depth-capture', ('video',), _needs('video.motion_capture'), depth_capture,
              note='逐帧估计景深，输出灰度深度视频（近处亮、远处暗），可作为视频生成的动作与结构参考；最长 30 秒。'),
 ]}

@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 import yaml
 
 from opendirector.agent.process import terminate
+from opendirector.agent.cli_discovery import cli_executable
 from opendirector.domain.projects import ProjectError
 
 
@@ -58,7 +59,7 @@ class Client:
 
     async def initialize(self, work, servers, session_id=None):
         result = await self.request('initialize', {'protocolVersion': 1,
-            'clientInfo': {'name': 'opendirector', 'version': '0.1.2'}, 'clientCapabilities': {}})
+            'clientInfo': {'name': 'opendirector', 'version': '0.1.6'}, 'clientCapabilities': {}})
         if result['protocolVersion'] != 1:
             raise ProjectError('DeepSeek Harness 不支持 ACP v1，请更新 CLI。', 503)
         params = {'cwd': str(work), 'mcpServers': servers}
@@ -78,7 +79,7 @@ class Client:
 
 
 def arguments(private, skill_root=None):
-    binary = shutil.which('dsh')
+    binary = cli_executable('dsh')
     if binary is None:
         raise ProjectError('DeepSeek Harness 尚未安装，请安装 dsh CLI。', 503)
     home = Path(os.environ.get('DSH_HOME', Path.home() / '.dsh')).expanduser()
@@ -93,8 +94,12 @@ def arguments(private, skill_root=None):
     rows = [row for row in desktop_rows if row.get('id', '').startswith('llm-')
         and row['id'] not in overridden and 'config' in row]
     default = next((row['config'] for row in desktop_rows if row.get('id') == 'agent-default-model'), None)
-    if default and 'acp' not in overridden:
-        rows.append({'id': 'acp', 'config': {key: default[key] for key in ('provider', 'model')}})
+    if 'acp' not in overridden:
+        # The native ACP profile can still default to the retired text-only ID.
+        route = {key: default[key] for key in ('provider', 'model')} if default else {
+            'provider': 'deepseek-official', 'model': 'deepseek-flash',
+        }
+        rows.append({'id': 'acp', 'config': route})
     rows.append({'id': 'skill-filesystem', 'config': {'includeDefaultRoots': False,
         'customSkillDirs': [str(skill_root)] if skill_root else [], 'watch': False}})
     patch = private / 'deepseek.patch.json'

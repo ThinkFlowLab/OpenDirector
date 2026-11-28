@@ -11,7 +11,14 @@ const browser = await chromium.launch({
     : {}),
   args: ["--no-sandbox"],
 });
-const page = await browser.newPage({ locale: "zh-CN", viewport: { width: 1700, height: 1000 } });
+const page = await browser.newPage({
+  locale: "zh-CN",
+  viewport: { width: 1700, height: 1000 },
+});
+// Skip the first-run model setup welcome; it covers the canvas.
+await page.addInitScript(() =>
+  localStorage.setItem("opendirector.modelSetup.v1", "dismissed"),
+);
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
@@ -71,7 +78,7 @@ try {
       );
       const locked = {
         ...createNode("subject", { x: 1180, y: 200 }, { title: "锁定主体" }),
-        locked: true,
+        locked: false,
       };
       const saved = await importWorkspaceDocument({
         ...createDocument("Subject UI " + crypto.randomUUID().slice(0, 8)),
@@ -93,6 +100,35 @@ try {
     await page.goto(base + "/ai-tool/ai-canvas/" + f.id + mode);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     const node = (id) => page.locator(`.react-flow__node[data-id="${id}"]`);
+    // Imported locks are intentionally released on first open (#415).
+    // Exercise a current API lock after that open-time policy has completed.
+    await page.waitForFunction(
+      (id) =>
+        localStorage.getItem(`opendirector.legacyLocksReleased:${id}`) === "1",
+      f.id,
+    );
+    await page.evaluate(async ({ id, locked }) => {
+      const { creationClient } = await import("/src/backend/creationClient.ts");
+      const client = creationClient(id);
+      await client.refresh();
+      const item = client.snapshot.canvasItems.find(
+        (item) => item.id === locked,
+      );
+      const receipt = await client.command(
+        "canvas.update",
+        {
+          itemId: locked,
+          locked: true,
+        },
+        [{ objectType: "canvas_item", id: item.id, revision: item.revision }],
+      );
+      if (receipt.status !== "applied") throw Error(JSON.stringify(receipt));
+      if (
+        !client.snapshot.canvasItems.find((item) => item.id === locked)?.locked
+      )
+        throw Error("Subject lock was not persisted");
+    }, f);
+    await node(f.locked).locator(".cw-node-locked").waitFor();
     const summary = page.locator(".cw-node-info-trigger");
     const summaryPanel = page.getByRole("tooltip", {
       name: "节点信息",

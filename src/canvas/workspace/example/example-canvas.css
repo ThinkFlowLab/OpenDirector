@@ -1,0 +1,209 @@
+/* Example canvas picker: download progress, failure reason and manual fallback.
+   Dark is the base theme here; `--cw-control-*` only exists under [data-theme="light"]. */
+.cw-example-dialog {
+  width: min(680px, calc(100vw - 48px));
+  max-height: min(78vh, 720px);
+  padding: 20px;
+  border-radius: 16px;
+  /* Opaque: the empty canvas state behind must not show through. */
+  border: 1px solid #ffffff1f;
+  background: #23242b;
+  color: #ececee;
+  box-shadow: 0 18px 48px #000000b3;
+  overflow: auto;
+}
+
+.cw-example-dialog::backdrop {
+  background: #000000a6;
+}
+
+.cw-example-dialog header h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.cw-example-dialog header p {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: #9d9da6;
+}
+
+.cw-example-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cw-example-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #ffffff14;
+  border-radius: 12px;
+  background: #2a2b33;
+}
+
+.cw-example-item-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cw-example-item-heading strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cw-example-item-heading small,
+.cw-example-summary {
+  font-size: 12px;
+  color: #9d9da6;
+}
+
+.cw-example-summary {
+  margin: 0;
+}
+
+.cw-example-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.cw-example-actions button,
+.cw-example-dialog-actions button {
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid #ffffff26;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cw-example-actions button:hover:not(:disabled),
+.cw-example-dialog-actions button:hover:not(:disabled) {
+  background: #ffffff14;
+}
+
+.cw-example-actions button:disabled,
+.cw-example-dialog-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cw-example-progress {
+  flex: 1;
+  min-width: 120px;
+  height: 6px;
+  border-radius: 3px;
+  border: 0;
+  background: #ffffff1f;
+  appearance: none;
+  overflow: hidden;
+}
+
+.cw-example-progress::-webkit-progress-bar {
+  background: #ffffff1f;
+  border-radius: 3px;
+}
+
+.cw-example-progress::-webkit-progress-value {
+  background: #a78bd4;
+  border-radius: 3px;
+  transition: width 120ms linear;
+}
+
+.cw-example-progress::-moz-progress-bar {
+  background: #a78bd4;
+  border-radius: 3px;
+}
+
+.cw-example-error {
+  margin: 0;
+  font-size: 12px;
+  color: #e08a8a;
+}
+
+.cw-example-manual {
+  font-size: 12px;
+}
+
+.cw-example-manual summary {
+  color: #9d9da6;
+  cursor: pointer;
+}
+
+.cw-example-manual p {
+  margin: 6px 0;
+}
+
+.cw-example-manual a {
+  color: #8daed4;
+}
+
+.cw-example-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.cw-example-dialog-actions button {
+  padding: 6px 16px;
+  font-size: 13px;
+}
+
+/* Light theme: the page ships dark defaults, so every colour needs an override. */
+:root[data-theme="light"] .cw-example-dialog {
+  border-color: #dfe2e7;
+  background: #fff;
+  color: #30343c;
+  box-shadow: 0 18px 48px #30374426;
+}
+
+:root[data-theme="light"] .cw-example-dialog::backdrop {
+  background: #1a1c2266;
+}
+
+:root[data-theme="light"] .cw-example-dialog header p,
+:root[data-theme="light"] .cw-example-item-heading small,
+:root[data-theme="light"] .cw-example-summary,
+:root[data-theme="light"] .cw-example-manual summary {
+  color: #6b7280;
+}
+
+:root[data-theme="light"] .cw-example-item {
+  border-color: #e6e8ec;
+  background: #f7f8fa;
+}
+
+:root[data-theme="light"] .cw-example-actions button,
+:root[data-theme="light"] .cw-example-dialog-actions button {
+  border-color: #d6dae1;
+}
+
+:root[data-theme="light"] .cw-example-actions button:hover:not(:disabled),
+:root[data-theme="light"] .cw-example-dialog-actions button:hover:not(:disabled) {
+  background: #eef1f5;
+}
+
+:root[data-theme="light"] .cw-example-progress,
+:root[data-theme="light"] .cw-example-progress::-webkit-progress-bar {
+  background: #e3e6ec;
+}
+
+:root[data-theme="light"] .cw-example-error {
+  color: #b4453f;
+}
+
+:root[data-theme="light"] .cw-example-manual a {
+  color: #2f5fbf;
+}

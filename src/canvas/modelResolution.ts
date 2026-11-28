@@ -112,6 +112,8 @@ export function newNodeGenerationSettings(
     ),
   );
   const config = backendModel(settings, [...models]);
+  if (config?.protocol === "higgsfield_open" && config.inputRules.videoCapabilities)
+    settings.durationSeconds = config.inputRules.videoCapabilities.defaultDuration;
   return config
     ? serviceGenerationSettings(settings, config, [], true)
     : settings;

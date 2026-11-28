@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   centeredViewport,
+  projectSelectionRect,
   selectionPlacement,
   selectionViewport,
   type SelectionChrome,
@@ -156,4 +157,29 @@ test("created content centers in the canvas beside the assistant without enlargi
   assert.ok(large.zoom < 1);
   assert.ok(large.x + 5000 * large.zoom >= chrome.safe.x);
   assert.ok(large.x + 7000 * large.zoom <= chrome.safe.x + chrome.safe.width);
+});
+
+test("desktop origin offsets selection controls and fitting in both axes", () => {
+  const node = { x: 90, y: 170, width: 400, height: 300 };
+  const view = { x: 120, y: -40, zoom: 0.85 };
+  const chrome: SelectionChrome = {
+    canvasOrigin: { x: 224, y: 48 },
+    safe: { x: 304, y: 72, width: 700, height: 450 },
+    toolbar: { width: 320, height: 40 },
+    composer: { width: 620, height: 210 },
+  };
+  const placed = selectionPlacement(node, view, chrome);
+  const nodeBottom = 48 + view.y + (node.y + node.height) * view.zoom;
+  assert.ok(Math.abs(placed.composer.top - nodeBottom - 16) < 1e-6);
+  const media = projectSelectionRect(node, view, chrome.canvasOrigin);
+  assert.equal(media.x, 224 + view.x + node.x * view.zoom);
+  assert.equal(media.y, 48 + view.y + node.y * view.zoom);
+
+  const fitted = centeredViewport(node, view, chrome);
+  const fittedNode = projectSelectionRect(node, fitted, chrome.canvasOrigin);
+  const fittedControls = selectionPlacement(node, fitted, chrome);
+  assert.ok(fittedControls.toolbar.top >= chrome.safe.y - 1e-6);
+  assert.ok(fittedControls.composer.top + chrome.composer.height <= chrome.safe.y + chrome.safe.height + 1e-6);
+  assert.ok(Math.abs(fittedNode.x + fittedNode.width / 2 - (chrome.safe.x + chrome.safe.width / 2)) < 1e-6);
+  assert.deepEqual(selectionViewport(node, fitted, chrome), fitted);
 });

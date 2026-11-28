@@ -18,8 +18,7 @@ import { importWorkspaceDocument, workspaceProjection } from "../../backend/work
 import { downloadFile, downloadFilename } from "../assets";
 import { referenceIssueText, referenceIssue } from "../connectionPolicy";
 
-import { sameNodeData } from "../dataBoundary.ts";
-import { classifyImportFile, readEditorResource } from "../editorMedia";
+import { classifyImportFile } from "../editorMedia";
 import { lockedNodeIds } from "../hierarchy";
 import { readImportBatch } from "../importBatch";
 import {
@@ -30,7 +29,8 @@ import {
 } from "../library/libraryClient";
 import { type SubjectImportChoice } from "../library/SubjectImportDialog";
 import { applyCommand, createNode, type CanvasCommand, type CanvasNode, type CanvasResource, type Point } from "../model";
-import { copySelection, cutSelection, deleteSelection, groupSelection, pasteFragment, ungroupSelection, type CanvasFragment } from "../operations";
+import { copySelection, cutSelection, deleteSelection, groupDescendants, groupSelection, pasteFragment, ungroupSelection, type CanvasFragment } from "../operations";
+import { createZip } from "../zipArchive";
 
 import { buildCanvasArchive, readCanvasArchive } from "../canvasArchive.ts";
 import {
@@ -48,19 +48,21 @@ import {
   subjectTargetIdentity,
 } from "../subjectLibraryImport.ts";
 import { subjectWithResource, type SubjectMediaSlot } from "../subjectMedia.ts";
-import { importedNodeIds, uploadPickerPlan } from "./entryPoints.ts";
+import { importedNodeIds, uploadPickerPlan, uploadTargetUnchanged } from "./entryPoints.ts";
 
 import { assertUpload } from "../uploadPolicy.ts";
 import { prefetchLibrary } from "../library/libraryPrefetch";
 import type { WorkspaceRuntime } from "./runtimeTypes.ts";
+import { parseAssetSource } from "../../backend/assetSource.ts";
 
-export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
+export function useWorkspaceTransfer(rt: WorkspaceRuntime, readOnly: boolean) {
   const {
     center,
     change,
     clipboard,
     clipboardMedia,
     command,
+    commitCanvasCommand,
     doc,
     editing,
     fileInput,
@@ -440,6 +442,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     const projectId = historyRef.current.present.id;
     const client = creationClient(projectId);
     return captureClipboardMedia(projectId, fragment, {
+      read: (src, mimeType) => client.originalMedia(src, mimeType),
       resolve: (src, assetId) => {
         // A just-imported node may show its upload before it records the asset.
         const asset = assetId
@@ -495,7 +498,11 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
       void pasteFromProject(fragment, media);
       return;
     }
-    insertFragment(fragment, 40 * (duplicate ? 1 : ++pasteCount.current));
+    insertFragment(
+      fragment,
+      40 * (duplicate ? 1 : ++pasteCount.current),
+      duplicate ? "duplicate" : "paste",
+    );
   };
   const pasteFromProject = async (
     fragment: CanvasFragment,
@@ -537,12 +544,13 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
       pasting.current = false;
     }
   };
-  const insertFragment = (fragment: CanvasFragment, distance: number) => {
+  const insertFragment = (
+    fragment: CanvasFragment,
+    distance: number,
+    mode: "paste" | "duplicate" = "paste",
+  ) => {
     const before = historyRef.current.present;
-    const result = pasteFragment(before, fragment, {
-      x: distance,
-      y: distance,
-    });
+    const result = pasteFragment(before, fragment, { x: distance, y: distance }, mode);
     change(() => result.document);
     // Keep each paste in its own durable undo step, even inside the autosave debounce.
     void persist(before, false);
@@ -561,11 +569,13 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     setSelected([]);
     setMenu(null);
   };
-  const downloadNode = (node: CanvasNode) => {
+  const downloadNode = async (node: CanvasNode) => {
     try {
       if (node.data.src)
         downloadFile(
-          node.data.src,
+          ["image/heic", "image/heif"].includes(node.data.mimeType ?? "") || parseAssetSource(node.data.src)
+            ? await creationClient(historyRef.current.present.id).originalMedia(node.data.src, node.data.mimeType)
+            : node.data.src,
           downloadFilename(node.data.title, node.data.mimeType),
         );
       else if (node.type === "text")
@@ -580,27 +590,98 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
       notify(error instanceof Error ? error.message : t("canvas.workspace.toast.downloadFailed"));
     }
   };
+  /** Downloads every asset and text in a group, as one ZIP when there are several. */
+  const downloadGroup = async (group: CanvasNode) => {
+    const document = historyRef.current.present;
+    const members = groupDescendants(document.nodes, group.id).filter(
+      (node) =>
+        (node.data.src && node.data.assetState !== "missing") ||
+        (node.type === "text" && node.data.text),
+    );
+    if (!members.length) {
+      notify(t("canvas.workspace.toast.noDownloadableAsset"));
+      return;
+    }
+    if (members.length === 1) {
+      await downloadNode(members[0]!);
+      return;
+    }
+    try {
+      const used = new Set<string>();
+      const entries = await Promise.all(
+        members.map(async (node) => {
+          let blob: Blob;
+          if (node.data.src) {
+            const source = ["image/heic", "image/heif"].includes(node.data.mimeType ?? "") || parseAssetSource(node.data.src)
+              ? await creationClient(document.id).originalMedia(node.data.src, node.data.mimeType)
+              : node.data.src;
+            if (source instanceof Blob) blob = source;
+            else {
+              const response = await fetch(source);
+              if (!response.ok) throw new Error(t("canvas.workspace.toast.downloadFailed"));
+              blob = await response.blob();
+            }
+          } else
+            blob = new Blob([node.data.text ?? ""], { type: "text/plain;charset=utf-8" });
+          return { node, blob };
+        }),
+      );
+      const zipEntries = await Promise.all(
+        entries.map(async ({ node, blob }) => {
+          const name = downloadFilename(
+            node.data.title,
+            node.data.src ? node.data.mimeType : "text/plain",
+          ).replace(/[\\/]/g, "_");
+          const dot = name.lastIndexOf(".");
+          const [stem, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+          // Names differing only in case collide when extracted on macOS or Windows.
+          let path = name;
+          for (let index = 2; used.has(path.toLowerCase()); index++) path = `${stem} (${index})${extension}`;
+          used.add(path.toLowerCase());
+          return { path, data: new Uint8Array(await blob.arrayBuffer()) };
+        }),
+      );
+      downloadFile(
+        await createZip(zipEntries),
+        `${(group.data.title || t("canvas.workspace.kind.group")).replace(/[\\/]/g, "_")}.zip`,
+      );
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t("canvas.workspace.toast.downloadFailed"));
+    }
+  };
   const exportDocument = async () => {
     try {
-      const archive = await buildCanvasArchive(historyRef.current.present);
+      const document = historyRef.current.present;
+      const archive = await buildCanvasArchive(document, {
+        read: (src, mimeType) => creationClient(document.id).originalMedia(src, mimeType),
+      });
       downloadFile(archive.blob, archive.filename);
     } catch (error) {
       notify(errorMessage(error));
     }
   };
+  /** Reads an archive and lands it as a new project. Throws so callers can classify. */
+  const importCanvasArchive = async (archive: Blob) => {
+    const contents = await readCanvasArchive(archive);
+    const switched = await switchDocument(
+      () => importWorkspaceDocument(contents.document),
+      true,
+      true,
+    );
+    return {
+      title: contents.document.title,
+      assets: contents.assets,
+      switched,
+    };
+  };
   const importDocument = async (file: File) => {
     try {
-      const contents = await readCanvasArchive(file);
-      const switched = await switchDocument(
-        () => importWorkspaceDocument(contents.document),
-        true,
-        true,
-      );
-      if (switched)
+      const result = await importCanvasArchive(file);
+      if (result.switched)
         notify(
           t("canvas.workspace.toast.archiveImported", {
-            title: contents.document.title,
-            count: contents.assets,
+            title: result.title,
+            count: result.assets,
           }),
         );
     } catch (error) {
@@ -649,12 +730,12 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
     }
     fileInput.current?.click();
   };
-  const importFiles = async (files: File[], point?: Point) => {
-    const target = uploadTarget.current;
+  const importFiles = async (files: File[], point?: Point, waitForSave = false) => {
+    const target = waitForSave ? null : uploadTarget.current;
     const expected = target ? uploadSource.current : null;
     uploadSource.current = null;
     uploadTarget.current = null;
-    let refTarget = referenceTarget.current;
+    let refTarget = waitForSave ? null : referenceTarget.current;
     const importDocumentId = historyRef.current.present.id;
     referenceTarget.current = null;
     const controller = new AbortController();
@@ -687,7 +768,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
               expected?.node.type,
             );
           validate(classifyImportFile(file).kind);
-          let resource = await readEditorResource(file, signal);
+          let resource = await workspaceProjection(importDocumentId).importFile(file, signal);
           validate(resource.kind);
           if (expected?.node.type === "subject") {
             // Validate the slot before registering, then retain the canonical
@@ -697,14 +778,13 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
               resource,
               expected.subjectSlot,
             );
-            {
+            if (!resource.assetId) {
               const ref = await creationClient(importDocumentId).importBlob(
                 file,
                 file.name,
                 resource.kind,
               );
-              resource =
-                await workspaceProjection(importDocumentId).resource(ref);
+              resource = await workspaceProjection(importDocumentId).resource(ref);
               subjectWithResource(
                 expected.node.data.subject,
                 resource,
@@ -763,8 +843,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
         );
         if (
           !latest ||
-          latest.type !== expected.node.type ||
-          !sameNodeData(latest.data, expected.node.data) ||
+          !uploadTargetUnchanged(latest, expected.node) ||
           lockedNodeIds(historyRef.current.present.nodes).has(target)
         )
           throw new Error(t("canvas.workspace.error.uploadNodeChanged"));
@@ -794,7 +873,11 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
           )
         : { commands: [], issue: "" };
       commands.push(...linked.commands);
-      if (commands.length) command({ type: "batch", commands });
+      if (commands.length) {
+        const batch: CanvasCommand = { type: "batch", commands };
+        if (waitForSave) await commitCanvasCommand(batch, t("canvas.workspace.error.importUnsaved"));
+        else command(batch);
+      }
       setSelected(
         importedNodeIds({
           targetId: target,
@@ -819,8 +902,11 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
         : t("canvas.workspace.toast.importedAssetsSaved", {
             count: successes.length,
           });
+      if (waitForSave && !commands.length) throw new Error(importSummary);
       notify(`${importSummary}${linked.issue}`);
+      return commands.length > 0;
     } catch (error) {
+      if (waitForSave) throw error;
       if (!controller.signal.aborted)
         notify(error instanceof Error ? error.message : t("canvas.workspace.toast.assetImportFailed"));
     } finally {
@@ -829,7 +915,7 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
   };
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
-      if (event.defaultPrevented || !ready || switchPending.current) return;
+      if (readOnly || event.defaultPrevented || !ready || switchPending.current) return;
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       if (
@@ -874,8 +960,10 @@ export function useWorkspaceTransfer(rt: WorkspaceRuntime) {
   rt.group = group;
   rt.ungroup = ungroup;
   rt.downloadNode = downloadNode;
+  rt.downloadGroup = downloadGroup;
   rt.exportDocument = exportDocument;
   rt.importDocument = importDocument;
+  rt.importCanvasArchive = importCanvasArchive;
   rt.openFilePicker = openFilePicker;
   rt.importFiles = importFiles;
 }

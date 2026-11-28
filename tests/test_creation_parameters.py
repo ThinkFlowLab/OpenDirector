@@ -13,6 +13,7 @@ import httpx
 from PIL import Image
 import pytest
 
+from opendirector.application import creation_generation
 from opendirector.application.creation_canvas import asset_ref
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_tool_assets import CreationToolAssets
@@ -23,6 +24,10 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.providers import GenerationProviders
 from test_creation_canvas_service import project, media, send, ver
 from test_creation_generation_service import anyio_backend
+from generation_helpers import prepared
+
+
+pytestmark = pytest.mark.cpu
 
 
 def png(size=(32, 24), color='blue'):
@@ -114,6 +119,10 @@ async def test_image_parameters_reach_wire_and_real_output_with_fixed_sources(pr
         assert job.execution.size == job.adapterParameters['size'] == calls[0][0]['size'] == expected
         assert [str(ref.asset.assetId) for ref in job.inputSnapshot.references] == source_ids
         fields, files = calls[0]
+        # Only Z-Image-Turbo fixes sampling at acceptance; the job records it and sends it from that record.
+        sampling = {'num_inference_steps': 9, 'guidance_scale': 0.0} if model == 'Tongyi-MAI/Z-Image-Turbo' else {}
+        assert {key: fields[key] for key in ('num_inference_steps', 'guidance_scale') if key in fields} == sampling
+        assert (job.execution.numInferenceSteps, job.execution.guidanceScale) == (sampling.get('num_inference_steps'), sampling.get('guidance_scale'))
         if protocol == 'volcengine': assert len(fields.get('image', [])) == reference_count
         else: assert len(files) == reference_count
         if files: assert [data for _, data in files] == [png(color=color) for color in ['red', 'green']]
@@ -127,8 +136,10 @@ async def test_image_parameters_reach_wire_and_real_output_with_fixed_sources(pr
 
 @pytest.mark.anyio
 @pytest.mark.parametrize('model,first_frame', [('fixture',False),('fixture',True),('MiniMaxAI/MiniMax-H3',False),('MiniMaxAI/MiniMax-H3',True),('FastH3-Omni',False)])
-async def test_video_auto_resolution_respects_explicit_ratio_and_duration_on_wire(project, first_frame, model):
+async def test_video_auto_resolution_respects_explicit_ratio_and_duration_on_wire(project, first_frame, model, monkeypatch):
     store, pid, _ = project
+    if model == 'FastH3-Omni':
+        monkeypatch.setattr(creation_generation, 'new_seed', lambda: 4242)
     calls, uploads = [], []
     clip = subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=blue:s=48x84:r=10','-t','0.3','-threads','1','-c:v','libx264','-pix_fmt','yuv420p','-movflags','frag_keyframe+empty_moov','-f','mp4','pipe:1'],capture_output=True,check=True).stdout
     def handler(request):
@@ -156,15 +167,17 @@ async def test_video_auto_resolution_respects_explicit_ratio_and_duration_on_wir
         snapshot=store.snapshot(pid); job=snapshot.jobs[-1]
         assert job.status=='succeeded',job.errorDetails
         assert calls[0]['size']=='480x832'
-        if model == 'MiniMaxAI/MiniMax-H3':
+        if model == 'fixture':
+            assert calls[0]['seconds'] == '8'
+            assert 'num_frames' not in calls[0] and 'fps' not in calls[0]
+            assert job.execution.numFrames is None
+        else:
             assert calls[0]['num_frames'] == str(job.execution.numFrames) == '192'
             assert calls[0]['fps'] == str(job.execution.fps) == '24'
-        else:
-            assert calls[0]['seconds']=='8'
-            if model == 'FastH3-Omni':
-                assert job.execution.numFrames is None and 'num_frames' not in calls[0]
-                assert json.loads(calls[0]['extra_params'])['duration'] == 8
-                assert calls[0]['fps'] == str(job.execution.fps) == '24'
+            assert 'seconds' not in calls[0]
+        if model == 'FastH3-Omni':
+            assert 'duration' not in json.loads(calls[0]['extra_params'])
+            assert calls[0]['seed'] == '4242' and job.execution.seed == job.adapterParameters['seed'] == 4242
         assert job.execution.generateAudio is None
         assert job.execution.size=='480x832' and job.execution.durationSeconds==8
         assert job.inputSnapshot.spec.parameters.resolution=='auto'
@@ -201,27 +214,124 @@ async def test_audio_voice_reaches_actual_protocol_and_reopens(project,protocol)
     finally: await runner.close()
 
 
-@pytest.mark.anyio
-@pytest.mark.parametrize('lyrics,expected', [('[verse]\n雨落在窗前', '[verse]\n雨落在窗前'), ('', '[intro]\n[verse]\n[chorus]\n[outro]')])
-async def test_music_style_lyrics_and_length_reach_vllm_omni_music(project,lyrics,expected):
-    store,pid,_=project
-    calls=[]
+def music_server(calls):
     audio=subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','0.3','-ac','2','-threads','1','-f','mp3','pipe:1'],capture_output=True,check=True).stdout
     def handler(request):
         assert request.url.path=='/v1/audio/speech'
         calls.append(json.loads(request.content))
         return httpx.Response(200,content=audio)
-    runner,target,spec_id=setup(project,'audio',dict(creationType='music',lyrics=lyrics,durationSeconds=45),handler,protocol='vllm_omni_music',model='m-a-p/YuE2-3B')
+    return handler
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('lyrics,expected', [('[verse]\n雨落在窗前', '[verse]\n雨落在窗前'), ('', '[intro]\n[verse]\n[chorus]\n[outro]')])
+async def test_music_style_lyrics_and_length_reach_vllm_omni_music(project,lyrics,expected):
+    store,pid,_=project
+    calls=[]
+    runner,target,spec_id=setup(project,'audio',dict(creationType='music',lyrics=lyrics,durationSeconds=45),music_server(calls),protocol='vllm_omni_music',model='m-a-p/YuE2-3B')
     try:
         _,receipt=await submit(project,runner,target,spec_id)
         assert receipt.status=='accepted',receipt
         await done(runner)
         job=store.snapshot(pid).jobs[-1]
         assert job.status=='succeeded',job.errorDetails
-        assert calls==[{'model':'m-a-p/YuE2-3B','input':expected,'instructions':'Make an output','response_format':'mp3','max_new_tokens':1125}]
-        assert job.execution.creationType=='music' and job.execution.maxDurationSeconds==45
+        seed=job.adapterParameters['seed']
+        assert isinstance(seed,int) and 0<=seed<2**31
+        assert calls==[{'model':'m-a-p/YuE2-3B','input':expected,'instructions':'Make an output','response_format':'mp3','max_new_tokens':1125,'seed':seed}]
+        assert job.execution.creationType=='music' and job.execution.maxDurationSeconds==45 and job.execution.seed==seed
         assert job.inputSnapshot.model.inputRules.profile=='vllm-omni-music'
     finally: await runner.close()
+
+
+@pytest.mark.anyio
+async def test_generating_the_same_music_again_sends_a_new_seed(project,monkeypatch):
+    # MiniMax Music 3 renders with seed 0 when none is sent, so the same
+    # style, lyrics and length used to come back as the same song every time.
+    store,pid,_=project
+    calls=[]
+    seeds=iter([11,22])
+    monkeypatch.setattr(creation_generation,'new_seed',lambda:next(seeds))
+    runner,target,spec_id=setup(project,'audio',dict(creationType='music',lyrics='[verse]\n雨落在窗前',durationSeconds=30),music_server(calls),protocol='vllm_omni_music',model='MiniMaxAI/MiniMax-Music3')
+    try:
+        for _ in range(2):
+            _,receipt=await submit(project,runner,target,spec_id)
+            assert receipt.status=='accepted',receipt
+            await done(runner)
+        jobs=store.snapshot(pid).jobs
+        assert [job.status for job in jobs]==['succeeded','succeeded']
+        assert [call['seed'] for call in calls]==[11,22]
+        assert [(job.adapterParameters['seed'],job.execution.seed) for job in jobs]==[(11,11),(22,22)]
+    finally: await runner.close()
+
+
+@pytest.mark.anyio
+async def test_recovered_music_job_sends_the_seed_fixed_at_acceptance(project,monkeypatch):
+    store,pid,_=project
+    configs=ModelConfigs(store.local.repository)
+    config=configs.save('audio','http://fixture.invalid/v1','MiniMaxAI/MiniMax-Music3','',connection_type='self_hosted',protocol='vllm_omni_music',auth_mode='none')
+    monkeypatch.setattr(creation_generation,'new_seed',lambda:7)
+    task,_,_=prepared(CreationGeneration(store,configs),project,config,parameters=dict(creationType='music',lyrics='[verse]\n雨落在窗前'))
+    # Recovery must send what the job was accepted with, not draw again.
+    monkeypatch.setattr(creation_generation,'new_seed',lambda:8)
+    calls=[]
+    restarted=CreationGeneration(store,configs)
+    restarted.provider=GenerationProviders(restarted.store,transport=httpx.MockTransport(music_server(calls)),poll_interval=0)
+    try:
+        await restarted.recover(str(pid),task['id'])
+        await done(restarted)
+    finally: await restarted.close()
+    job=store.snapshot(pid).jobs[-1]
+    assert job.status=='succeeded',job.errorDetails
+    assert [call['seed'] for call in calls]==[7] and job.execution.seed==7
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('seed_constraint,accepted', [
+    ({'support': 'supported', 'type': 'integer', 'enum': [7]}, True),
+    ({'support': 'supported', 'type': 'integer', 'enum': [8]}, False),
+    ({'support': 'unsupported'}, False),
+])
+async def test_music_checks_the_seed_that_is_saved_and_sent(project, monkeypatch, seed_constraint, accepted):
+    from opendirector.application.model_availability import ModelAvailability
+    from opendirector.integrations.capability_probe import CapabilityProbe
+    from test_model_availability import document
+
+    store, pid, session = project
+    calls, checked = [], []
+    monkeypatch.setattr(creation_generation, 'new_seed', lambda: 7)
+    model = 'MiniMaxAI/MiniMax-Music3'
+    runner, target, spec_id = setup(project, 'audio', dict(creationType='music', lyrics='A test song'),
+        music_server(calls), protocol='vllm_omni_music', model=model)
+    declaration = document('speech', 'lyrics_to_music', '/v1/audio/speech', 'audio', model=model)
+    route = declaration['models'][0]['operations']['speech']['profiles'][0]['routes'][0]
+    route['request'] = {'parameters': {'seed': seed_constraint}}
+    probe = CapabilityProbe(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=declaration)))
+    runner.availability = ModelAvailability(runner.configs, probe)
+    require = runner.availability.require
+
+    def check(config, request, prepared=None):
+        checked.append(dict(request.parameters))
+        return require(config, request, prepared)
+
+    monkeypatch.setattr(runner.availability, 'require', check)
+    before = store.snapshot(pid)
+    try:
+        command, receipt = await submit(project, runner, target, spec_id)
+        assert receipt.status == ('accepted' if accepted else 'rejected'), receipt
+        if accepted:
+            await done(runner)
+            job = store.snapshot(pid).jobs[-1]
+            assert job.status == 'succeeded', job.errorDetails
+            assert checked[-1]['seed'] == job.adapterParameters['seed'] == job.execution.seed == calls[0]['seed'] == 7
+            assert await runner.execute(command, session=session) == receipt
+            assert len(calls) == len(store.snapshot(pid).jobs) == 1
+        else:
+            after = store.snapshot(pid)
+            assert not after.jobs and calls == []
+            assert after.generationSpecs == before.generationSpecs and after.assets == before.assets
+    finally:
+        await runner.close()
+        probe.close()
 
 
 SCORE = 'X:1\nM:4/4\nL:1/16\nK:A\nV: Vocal\nA4A2F2A4A2F2|\n'
@@ -285,7 +395,7 @@ async def test_music_follows_a_reference_recording_through_its_transcribed_score
         # A 20 s reference caps the piece at its length plus 10% headroom, 25 frames per second.
         seconds=math.ceil(asset.metadata.durationSeconds*1.1) if mode=='melody' else 60
         assert payload=={'model':'m-a-p/YuE2-3B','input':'[verse]\n雨落在窗前','instructions':'Make an output','response_format':'mp3',
-                         'max_new_tokens':seconds*25,'extra_params':{'cot':mode,'abc':SCORE}}
+                         'max_new_tokens':seconds*25,'seed':job.execution.seed,'extra_params':{'cot':mode,'abc':SCORE}}
         assert job.execution.maxDurationSeconds==seconds
         assert job.execution.scoreMode==job.adapterParameters['score_mode']==mode
         assert job.adapterParameters['score_model']=={'id':score['id'],'kind':'audio','modelId':'m-a-p/SheetSage2',
@@ -456,3 +566,62 @@ def test_unsupported_image_output_draft_blocks_only_its_own_generation(project):
     assert send(store, pid, 'generationSpec.update', session=session,
                 versions=[ver('generation_spec', spec)], spec=fixed).status == 'applied'
     assert canvas.projection(pid)['capabilities'][str(item.id)].canGenerate is True
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('seconds,frames', [(4, 96), (107 / 24, 107), (4.5, 108), (5.25, 126), (6.583333, 158), (15, 360)])
+@pytest.mark.parametrize('model', ['MiniMaxAI/MiniMax-H3', 'FastH3-Omni'])
+async def test_fractional_video_duration_survives_acceptance_and_wire(project, seconds, frames, model):
+    calls = []
+    clip = subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=blue:s=48x84:r=24',
+        '-t', '0.3', '-threads', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+        '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1'], capture_output=True, check=True).stdout
+
+    def handler(request):
+        if request.method == 'POST':
+            calls.append(form(request)[0])
+            return httpx.Response(200, json={'id': 'fractional-video'})
+        if request.url.path.endswith('/content'):
+            return httpx.Response(200, content=clip)
+        return httpx.Response(200, json={'status': 'completed'})
+
+    runner, item, spec_id = setup(project, 'video',
+        dict(videoMode='reference' if model == 'FastH3-Omni' else 'first_frame',
+             durationSeconds=seconds, resolution='480P', aspectRatio='16:9'), handler,
+        model=model, protocol='vllm_omni', caps=dict(outputs=[dict(resolution='480P', width=832,
+            height=480, durations=[4, 15])], defaultResolution='480P', defaultDuration=4, dimensionStep=32))
+    store, pid, _ = project
+    try:
+        _, receipt = await submit(project, runner, item, spec_id)
+        assert receipt.status == 'accepted', receipt
+        await done(runner)
+        snapshot = store.snapshot(pid)
+        job = snapshot.jobs[-1]
+        assert job.status == 'succeeded', job.errorDetails
+        assert job.inputSnapshot.spec.parameters.durationSeconds == seconds
+        assert job.execution.durationSeconds == seconds
+        assert calls[0]['num_frames'] == str(frames)
+        assert calls[0]['fps'] == '24'
+        assert 'seconds' not in calls[0]
+        assert 'duration' not in json.loads(calls[0].get('extra_params', '{}'))
+        assert job.execution.numFrames == frames
+        assert CreationProjects(LocalProjects(store.local.repository)).snapshot(pid) == snapshot
+    finally:
+        await runner.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('caps', [None, dict(outputs=[dict(resolution='480P', width=832, height=480, durations=[4, 8])],
+                                          defaultResolution='480P', defaultDuration=4, dimensionStep=32)])
+async def test_generic_video_rejects_fractional_duration_before_submission(project, caps):
+    def handler(request):
+        pytest.fail('A fractional generic-video request must not reach the provider')
+
+    runner, item, spec_id = setup(project, 'video', dict(durationSeconds=5.25, resolution='auto'), handler,
+                                 model='fixture', protocol='vllm_omni', caps=caps)
+    try:
+        _, receipt = await submit(project, runner, item, spec_id)
+        assert receipt.status == 'rejected', receipt
+        assert not project[0].snapshot(project[1]).jobs
+    finally:
+        await runner.close()

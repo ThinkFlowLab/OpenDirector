@@ -5,6 +5,7 @@ import {
   CreationClient,
   CreationCommandError,
 } from "../src/backend/creationClient.ts";
+import { assetSource } from "../src/backend/assetSource.ts";
 import { CreationProjection } from "../src/backend/creationProjection.ts";
 import { CreationEditorSession } from "../src/backend/creationEditorSession.ts";
 import type {
@@ -25,7 +26,9 @@ async function fixture() {
   client.mediaUrl = async (id) => `blob:${id}`;
   client.textContent = async () => "fixture text";
   client.assetForSource = (src) =>
-    snapshot.assets.find((a) => `blob:${a.id}` === src);
+    snapshot.assets.find(
+      (a) => `blob:${a.id}` === src || assetSource(client.id, a.id) === src,
+    );
   client.view = async () => ({
     projectId: client.id,
     clientId: "fixture",
@@ -261,7 +264,7 @@ test("timeline text fonts and immutable sources project both ways through the sh
     },
   };
   const view = await projection.editorData(enriched as never);
-  assert.equal(view.timeline!.fonts![0]!.src, `blob:${font.id}`);
+  assert.equal(view.timeline!.fonts![0]!.src, assetSource(client.id, font.id));
   assert.deepEqual(view.timeline!.overlays![0]!.source!.asset, ref(source));
   const node = document.nodes.find((n) => n.id === item.id)!;
   Object.assign(node.data, view);

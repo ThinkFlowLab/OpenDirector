@@ -211,6 +211,12 @@
 .cw-model-connection-field > label {
   margin-bottom: 0;
 }
+/* A checkbox leads its own label, so the pair reads as one row. */
+.cw-model-connection-field > label:has(> input[type="checkbox"]) {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
 .cw-model-connection-field > .cw-model-note {
   margin-top: 4px;
 }
@@ -219,13 +225,15 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px;
 }
-.cw-model-connection :is(input, select) {
+/* The model editor is also hosted outside the settings dialog (first-run
+   setup), so its styling hangs off its own root instead of the dialog. */
+.cw-model-connection :is(input:not([type="checkbox"]), select) {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
   min-height: var(--settings-control-height);
 }
-.cw-settings-dialog .cw-model-connection :is(input:not([type="checkbox"]), select):focus-visible {
+.cw-model-editor .cw-model-connection :is(input:not([type="checkbox"]), select):focus-visible {
   outline: none;
   border-color: var(--cw-control-accent);
   box-shadow: 0 0 0 1px var(--cw-control-accent);
@@ -248,10 +256,10 @@
   position: relative;
   display: flex;
 }
-.cw-settings-dialog .cw-model-settings .cw-model-key-input > input {
+.cw-model-editor .cw-model-key-input > input {
   padding-right: 52px;
 }
-.cw-settings-dialog .cw-model-key-input button {
+.cw-model-editor .cw-model-key-input button {
   position: absolute;
   right: 4px;
   top: 3px;
@@ -391,7 +399,7 @@
 .cw-model-option > label span {
   overflow-wrap: anywhere;
 }
-.cw-model-settings input[type="checkbox"] {
+.cw-model-editor input[type="checkbox"] {
   width: 14px;
   height: 14px;
   min-height: 0;
@@ -400,7 +408,7 @@
   accent-color: var(--cw-control-accent);
   cursor: pointer;
 }
-.cw-settings-dialog .cw-model-row-test {
+.cw-model-editor .cw-model-row-test {
   min-height: 28px;
   padding: 2px 6px;
   font-size: var(--settings-caption-size);
@@ -661,3 +669,21 @@
 
 .cw-model-editor-scroll > .cw-model-connection-details { margin: 0 0 16px; }
 .cw-model-editor-scroll > .cw-provider-key { margin: 0 0 18px; }
+
+.cw-model-availability { padding: 12px 0; font-size: var(--settings-label-size, 13px); }
+.cw-model-option > .cw-model-availability { flex-basis: 100%; width: 100%; min-width: 0; border-top: 1px solid var(--settings-border); }
+.cw-model-availability-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cw-model-availability p, .cw-model-availability small { color: var(--settings-muted); }
+.cw-model-availability ul { display: grid; gap: 8px; margin: 10px 0; padding: 0; list-style: none; }
+.cw-model-availability li { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, 3fr); gap: 12px; overflow-wrap: anywhere; }
+.cw-model-availability-details { padding: 12px 16px; border-top: 1px solid var(--settings-border); }
+.cw-model-availability-details summary { cursor: pointer; }
+.cw-model-availability [data-availability="unavailable"] { color: var(--cw-danger, #b45336); }
+.cw-model-availability [data-stale] { opacity: .55; }
+.cw-model-input-details { margin-top: 4px; color: var(--settings-muted); }
+.cw-model-input-details summary { cursor: pointer; }
+.cw-model-input-details dl { margin: 6px 0; }
+.cw-model-input-details dl > div { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, 2fr); gap: 8px; }
+.cw-model-input-details dd { margin: 0; }
+.cw-model-input-details small { display: block; }
+.cw-model-input-details summary small { display: inline; margin-inline-start: 8px; }

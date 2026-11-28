@@ -1,0 +1,14 @@
+.cw-edit-request {
+  cursor: pointer;
+  color: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid var(--cw-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.cw-preview-selection-controls {
+  display: contents;
+}

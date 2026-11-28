@@ -93,6 +93,10 @@ function HistoricalOptions({
   switch (spec.kind) {
     case "image":
       summary = `${auto(spec.parameters.aspectRatio)} · ${auto(spec.parameters.size)} · ${t("canvasNodes.versionComposer.oneImage")}`;
+      if (frozen.model.inputRules?.imageQualities?.length || spec.parameters.quality)
+        summary += ` · ${t("generation.field.qualityAria", {
+          value: t(`generation.quality.${spec.parameters.quality ?? "auto"}`),
+        })}`;
       mode =
         spec.parameters.preset === "product-views"
           ? t("canvasNodes.versionComposer.productViews")
@@ -110,6 +114,7 @@ function HistoricalOptions({
         reference: t("canvasNodes.versionComposer.mode.reference"),
         first_frame: t("canvasNodes.versionComposer.mode.firstFrame"),
         continuation: t("canvasNodes.versionComposer.mode.continuation"),
+        control: t("canvasNodes.versionComposer.mode.control"),
       }[spec.parameters.videoMode];
       break;
     case "audio":

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { assetSource } from "../src/backend/assetSource.ts";
 import type {
   ProjectSnapshot,
   ObjectVersion,
@@ -13,6 +14,7 @@ import type {
 import {
   CreationClient,
   CreationCommandError,
+  MEDIA_PRIORITY,
   assetReference,
   type CreationOperation,
 } from "../src/backend/creationClient.ts";
@@ -35,6 +37,51 @@ function empty(): ProjectSnapshot {
     undoClearedThrough: 0,
   };
 }
+
+test("original media refuses orphaned HEIF previews and preserves ordinary drafts", async () => {
+  const snapshot = empty(), client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const original = globalThis.fetch;
+  const requested: string[] = [];
+  globalThis.fetch = async (input) => {
+    requested.push(String(input));
+    return new Response("original", { headers: { "Content-Type": "image/heic" } });
+  };
+  try {
+    for (const suffix of ["heic", "heif"])
+      await assert.rejects(client.originalMedia("blob:display", `image/${suffix}`), /素材|media/);
+    assert.equal(requested.length, 0);
+    const asset = { id: crypto.randomUUID(), metadata: { mimeType: "image/heic" } } as Asset;
+    client.install({ ...snapshot, assets: [asset] });
+    client.rememberSource("blob:display", asset.id);
+    assert.equal(await (await client.originalMedia("blob:display", "image/heic")).text(), "original");
+    assert.ok(requested[0]!.endsWith(`/assets/${asset.id}/content`));
+    await client.originalMedia("blob:draft", "image/png");
+    assert.equal(requested[1], "blob:draft");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("HEIF file import rejects unavailable previews without returning an empty resource", async () => {
+  const snapshot = empty(), client = new CreationClient(snapshot.project.id);
+  const asset = {
+    id: crypto.randomUUID(), kind: "image", revision: 1, fingerprint: "original",
+    name: "photo.heic", metadata: { mimeType: "image/heic", size: 100, width: 10, height: 20 },
+  } as Asset;
+  client.install({ ...snapshot, assets: [asset] });
+  client.importBlob = async () => assetReference(asset);
+  const error = new Error("preview unavailable");
+  client.mediaUrl = async () => { throw error; };
+  const projection = new CreationProjection(client);
+  for (const suffix of ["heic", "heif"]) {
+    await assert.rejects(
+      projection.importFile(new File(["original"], `photo.${suffix}`, { type: "application/octet-stream" })),
+      value => value === error,
+    );
+  }
+  assert.equal(client.snapshot.assets[0], asset);
+});
 
 test("history reads coalesce per cursor, invalidate after changes and retry failures", async () => {
   const original = globalThis.fetch;
@@ -392,6 +439,58 @@ test("an accepted command whose snapshot refresh fails retains its original deli
   }
 });
 
+test("a confirmed generation rejection is not replayed after reload when refresh fails", async () => {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  const saved = new Map<string, string>();
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => saved.set(key, value),
+      removeItem: (key: string) => saved.delete(key),
+    },
+  });
+  const previousFetch = globalThis.fetch;
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const commandIds: string[] = [];
+  globalThis.fetch = async (url, options) => {
+    assert.ok(String(url).endsWith("/commands"));
+    const { commandId } = JSON.parse(options!.body as string);
+    commandIds.push(commandId);
+    // The server returns the same rejection when the original ID is replayed.
+    const rejected = commandId === commandIds[0];
+    return Response.json({
+      commandId,
+      projectId: snapshot.project.id,
+      status: rejected ? "rejected" : "accepted",
+      inputFingerprint: "a".repeat(64),
+      changed: [],
+      jobIds: rejected ? [] : [crypto.randomUUID()],
+      issues: rejected ? [{ code: "capability_unavailable", message: "First frame unsupported" }] : [],
+      eventCursor: 1,
+    });
+  };
+  client.refresh = async () => { throw new TypeError("connection lost after rejection"); };
+  const payload = { specId: crypto.randomUUID(), expectedSpecRevision: 1 };
+  try {
+    const first = await client.command("generation.submit", payload).catch((error) => error);
+    const reopened = new CreationClient(snapshot.project.id);
+    reopened.install(snapshot);
+    reopened.refresh = async () => snapshot;
+    assert.equal((await reopened.command("generation.submit", payload)).status, "accepted");
+    assert.notEqual(commandIds[0], commandIds[1]);
+    assert.ok(first instanceof CreationCommandError);
+    assert.equal(first.receipt.issues[0]?.code, "capability_unavailable");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousStorage)
+      Object.defineProperty(globalThis, "sessionStorage", previousStorage);
+    else Reflect.deleteProperty(globalThis, "sessionStorage");
+  }
+});
+
 class CommandCapture extends CreationClient {
   override async textContent() {
     return "Actual source";
@@ -498,6 +597,7 @@ function presentationFixture() {
       size: "auto",
       aspectRatio: null,
       preset: "none",
+      faceEmphasis: false,
       responseFormat: "url",
       outputFormat: "png",
     },
@@ -1444,6 +1544,287 @@ test("a no-op save skips command batches and unchanged view writes", async () =>
       0,
     );
   } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("cancelling a staged Blob upload deletes the handle before registering an asset", async () => {
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const signal = new AbortController();
+  const handle = crypto.randomUUID();
+  const path = `/api/creation/projects/${snapshot.project.id}/uploads/${handle}`;
+  const calls: [string, string][] = [];
+  const fetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    const method = options?.method ?? "GET";
+    calls.push([String(url), method]);
+    if (method === "PUT") {
+      assert.equal(options?.signal, signal.signal);
+      signal.abort();
+    } else {
+      assert.equal(options?.signal?.aborted ?? false, false);
+    }
+    return Response.json({});
+  };
+  try {
+    await assert.rejects(
+      client.importBlob(new Blob(["image"]), "image.png", "image", handle, undefined, signal.signal),
+      { name: "AbortError" },
+    );
+    assert.deepEqual(calls, [[path, "PUT"], [path, "DELETE"]]);
+  } finally {
+    globalThis.fetch = fetch;
+  }
+});
+
+test("canvas video and audio import upload the original File and use Host media metadata", async () => {
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  const projection = new CreationProjection(client);
+  const signal = new AbortController().signal;
+  for (const [kind, name, mimeType] of [
+    ["video", "Windows on SteamDeck！上手测试.mp4", "video/mp4"],
+    ["audio", "voice.wav", "audio/wav"],
+  ] as const) {
+    const file = new File(["original bytes"], name, { type: mimeType });
+    const asset = {
+      id: crypto.randomUUID(), kind, name, revision: 1, fingerprint: "original",
+      metadata: { mimeType, size: file.size, durationSeconds: 2 },
+    } as Asset;
+    client.install({ ...snapshot, assets: [asset] });
+    client.importBlob = async (body, filename, mediaKind, _handle, _origin, uploadSignal) => {
+      assert.equal(body, file);
+      assert.equal(filename, name);
+      assert.equal(mediaKind, kind);
+      assert.equal(uploadSignal, signal);
+      return assetReference(asset);
+    };
+    client.mediaUrl = async () => "blob:registered-media";
+    const resource = await projection.importFile(file, signal);
+    assert.equal(resource.assetId, asset.id);
+    assert.equal(resource.durationSeconds, 2);
+    assert.equal(resource.src, assetSource(client.id, asset.id));
+  }
+});
+
+function mediaFixture() {
+  const snapshot = JSON.parse(
+    readFileSync(
+      new URL("./fixtures/creation-project.json", import.meta.url),
+      "utf8",
+    ),
+  ) as ProjectSnapshot;
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  client.textContent = async () => "fixture text";
+  client.view = async () => ({
+    projectId: client.id,
+    clientId: "fixture",
+    viewport: { x: 0, y: 0, zoom: 1 },
+    selectedItemIds: [],
+    activeEditorId: null,
+    playheads: [],
+    generationCounts: {},
+  });
+  return { client, snapshot };
+}
+
+test("canvas structure is projected without waiting for any node media", async () => {
+  const { client, snapshot } = mediaFixture();
+  let mediaReads = 0;
+  client.mediaUrl = () => {
+    mediaReads += 1;
+    return new Promise<string>(() => {});
+  };
+  const document = await new CreationProjection(client).read();
+  assert.equal(mediaReads, 0);
+  assert.equal(
+    document.nodes.length + (document.hiddenNodes?.length ?? 0),
+    snapshot.canvasItems.length,
+  );
+  const image = document.nodes.find(
+    (node) => node.type === "image" && node.data.backendAssetId,
+  )!;
+  assert.equal(
+    image.data.src,
+    assetSource(client.id, image.data.backendAssetId!),
+  );
+  assert.equal(image.data.assetState, "ready");
+});
+
+test("a display URL for the current asset is not saved as new material", async () => {
+  const { client, snapshot } = mediaFixture();
+  const operations: CreationOperation[] = [];
+  client.batch = async (next) => {
+    operations.push(...next);
+    return undefined;
+  };
+  const projection = new CreationProjection(client);
+  const document = await projection.read();
+  projection.baseline = document;
+  projection.basis = snapshot;
+  const edited = structuredClone(document);
+  const image = edited.nodes.find(
+    (node) => node.type === "image" && node.data.backendAssetId,
+  )!;
+  client.rememberSource("blob:displayed", image.data.backendAssetId!);
+  image.data.src = "blob:displayed";
+  await projection.save(edited, { saveView: false });
+  assert.ok(!operations.some((op) => op.type === "canvas.materialize"));
+});
+
+test("opening a canvas keeps text with the snapshot and reads originals by asset", async () => {
+  const original = globalThis.fetch;
+  const { snapshot } = mediaFixture();
+  const text = snapshot.assets.find((asset) => asset.kind === "text")!;
+  const image = snapshot.assets.find((asset) => asset.kind === "image")!;
+  const paths: string[] = [];
+  globalThis.fetch = async (url) => {
+    const path = String(url);
+    paths.push(path);
+    if (path.endsWith("/open-canvas"))
+      return Response.json({
+        snapshot,
+        edges: [],
+        texts: { [text.id]: "kept with structure" },
+      });
+    if (path.includes("/views/")) return new Response(null, { status: 204 });
+    if (path.includes("/subscribe"))
+      return new Response(new ReadableStream({ start() {} }));
+    if (path.endsWith(`/assets/${image.id}/content`))
+      return new Response("original", { status: 200 });
+    throw new Error(`Unexpected request ${path}`);
+  };
+  const client = new CreationClient(snapshot.project.id);
+  try {
+    await client.open();
+    assert.equal(await client.textContent(text.id), "kept with structure");
+    assert.ok(!paths.some((path) => path.includes(`/assets/${text.id}/`)));
+    const source = assetSource(client.id, image.id);
+    assert.equal(client.assetForSource(source)?.id, image.id);
+    assert.equal(client.assetForSource(assetSource("other", image.id)), undefined);
+    assert.equal(await (await client.originalMedia(source)).text(), "original");
+    // Displayed bytes are reused directly: the desktop CSP blocks fetching blob URLs.
+    const url = await client.mediaUrl(image.id);
+    const reads = paths.length;
+    assert.equal(await (await client.originalMedia(source)).text(), "original");
+    assert.equal(paths.length, reads);
+    assert.ok(!paths.includes(url));
+  } finally {
+    client.close();
+    globalThis.fetch = original;
+  }
+});
+
+test("an upload rejected for a lapsed lease is renewed and resent with the same file", async () => {
+  const { setLeaseRecovery } = await import("../src/backend/api.ts");
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const signal = new AbortController();
+  const handle = crypto.randomUUID();
+  const path = `/api/creation/projects/${snapshot.project.id}/uploads/${handle}`;
+  const blob = new Blob(["rendered timeline"]);
+  const puts: { body: unknown; name: string | null; session: string | null }[] = [];
+  const renewed: string[] = [];
+  const fetch = globalThis.fetch;
+  setLeaseRecovery(async (projectId) => {
+    renewed.push(projectId);
+    return true;
+  });
+  globalThis.fetch = async (url, options) => {
+    if ((options?.method ?? "GET") !== "PUT") return Response.json({});
+    assert.equal(String(url), path);
+    const headers = new Headers(options?.headers);
+    puts.push({ body: options?.body, name: headers.get("X-Asset-Name"), session: headers.get("X-OpenDirector-Session") });
+    if (puts.length === 1)
+      return Response.json({ detail: "会话已过期", code: "session_expired" }, { status: 409 });
+    // Stop before registration; the resend itself is what is under test.
+    signal.abort();
+    return Response.json({ fingerprint: "sha256:x" });
+  };
+  try {
+    await assert.rejects(
+      client.importBlob(blob, "合回原声 2.mp4", "video", handle, "edited", signal.signal),
+      { name: "AbortError" },
+    );
+    assert.deepEqual(renewed, [snapshot.project.id]);
+    assert.equal(puts.length, 2);
+    for (const put of puts) {
+      assert.equal(put.body, blob);
+      assert.equal(put.name, encodeURIComponent("合回原声 2.mp4"));
+      assert.ok(put.session);
+    }
+  } finally {
+    globalThis.fetch = fetch;
+    setLeaseRecovery(undefined);
+  }
+});
+
+test("display reads stop only after every on-screen consumer leaves", async () => {
+  const original = globalThis.fetch;
+  const { client, snapshot } = mediaFixture();
+  const image = snapshot.assets.find((asset) => asset.kind === "image")!;
+  const signals: AbortSignal[] = [];
+  globalThis.fetch = (async (_url, options) => {
+    signals.push(options!.signal!);
+    return new Promise<Response>((_, reject) => {
+      options!.signal!.addEventListener("abort", () =>
+        reject(options!.signal!.reason),
+      );
+    });
+  }) as typeof fetch;
+  try {
+    const first = new AbortController();
+    const second = new AbortController();
+    const visible = { priority: MEDIA_PRIORITY.visible };
+    const reads = [
+      client.mediaUrl(image.id, { ...visible, signal: first.signal }),
+      client.mediaUrl(image.id, { ...visible, signal: second.signal }),
+    ];
+    const settled = Promise.allSettled(reads);
+    await new Promise((resolve) => setTimeout(resolve));
+    assert.equal(signals.length, 1);
+    first.abort();
+    await new Promise((resolve) => setTimeout(resolve));
+    assert.equal(signals[0]!.aborted, false);
+    second.abort();
+    await settled;
+    await new Promise((resolve) => setTimeout(resolve));
+    assert.equal(signals[0]!.aborted, true);
+    // Scrolling away says nothing about the file, so the node stays available.
+    assert.equal(client.mediaUnavailable(image.id), false);
+  } finally {
+    client.close();
+    globalThis.fetch = original;
+  }
+});
+
+test("a failed display read is reported and recovers on retry", async () => {
+  const original = globalThis.fetch;
+  const { client, snapshot } = mediaFixture();
+  const image = snapshot.assets.find((asset) => asset.kind === "image")!;
+  let healthy = false;
+  let notifications = 0;
+  client.listenMedia(() => (notifications += 1));
+  globalThis.fetch = (async () =>
+    healthy
+      ? new Response("bytes", { headers: { "content-type": "image/png" } })
+      : Response.json(
+          { code: "storage_unavailable", detail: "missing" },
+          { status: 409 },
+        )) as typeof fetch;
+  try {
+    await assert.rejects(client.mediaUrl(image.id));
+    assert.equal(client.mediaUnavailable(image.id), true);
+    healthy = true;
+    assert.match(await client.mediaUrl(image.id), /^blob:/);
+    assert.equal(client.mediaUnavailable(image.id), false);
+    assert.equal(notifications, 2);
+  } finally {
+    client.close();
     globalThis.fetch = original;
   }
 });

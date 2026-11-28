@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import openDirectorLogo from "../assets/open_director_logo.png";
-import { runtimeModels, type ChatAsset, type ModelSelections } from "../backend/chat";
+import { runtimeModels, type AssistantModelSelection, type ChatAsset, type ModelSelections } from "../backend/chat";
+import { assistantModelSelection } from "./agentPreferences";
 import { creationClient } from "../backend/creationClient.ts";
 import { fingerprint } from "../backend/generation.ts";
 import type { BackendModels } from "../backend/models";
@@ -34,12 +35,14 @@ import {
 import { assetOptionId, referenceCandidates } from "./referenceCandidates.ts";
 import { type MentionOption } from "./referenceMentions";
 import { useAssistantChat } from "./useAssistantChat";
+import { needsAgentModel } from "./assistantReadiness.ts";
 import type { AssistantLayout } from "./useAssistantLayout";
 import { usePendingCanvasReferences } from "./usePendingCanvasReferences.ts";
 import { useProjectMentionAssets } from "./useProjectMentionAssets";
 import { useReferenceUploads } from "./useReferenceUploads.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
+import { AssetMedia } from "./useAssetMedia.tsx";
 
 function kindOf(asset: ChatAsset) {
   return asset.type.startsWith("image/")
@@ -54,6 +57,7 @@ function kindOf(asset: ChatAsset) {
 /** OpenDirector conversation tools in an OpenDirector floating canvas window. */
 export function AssistantPanel({
   documentId,
+  readOnly = false,
   documentTitle,
   catalog,
   nodes,
@@ -65,10 +69,12 @@ export function AssistantPanel({
   onClose,
   onTurnEnd,
   onModelSelections,
+  onAgentModel,
   onOpenSettings,
   onPrepareReferences,
 }: {
   documentId: string;
+  readOnly?: boolean;
   documentTitle: string;
   catalog: BackendModels;
   nodes: CanvasNode[];
@@ -81,12 +87,13 @@ export function AssistantPanel({
   onTurnEnd: () => void;
   /** Lets the canvas default new nodes to the model this dialog is using. */
   onModelSelections?: (selections: ModelSelections) => void;
+  onAgentModel?: (projectId: string, selection: AssistantModelSelection | null) => void;
   onOpenSettings: () => void;
   onPrepareReferences: () => Promise<boolean>;
 }) {
   const t = useT();
-  const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open);
-  const { value, setValue } = chat;
+  const chat = useAssistantChat(documentId, catalog, onTurnEnd, t, open, readOnly);
+  const { value } = chat;
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
   useEffect(() => {
@@ -125,22 +132,32 @@ export function AssistantPanel({
   const pending = pendingReferences.pending;
   const [checkingReferences, setCheckingReferences] = useState(false);
   const confirming = useRef<AbortController | null>(null);
-  const latest = useRef({ value, selectedNodes, open });
-  latest.current = { value, selectedNodes, open };
   // Keep the canvas defaulting new nodes to the model this dialog is using.
   const report = useRef(onModelSelections);
   report.current = onModelSelections;
   useEffect(() => {
     report.current?.(value.modelSelections);
   }, [value.modelSelections]);
+  useLayoutEffect(() => {
+    onAgentModel?.(documentId, chat.loaded && !chat.changing ? assistantModelSelection(value, chat.agent?.id) : null);
+  }, [documentId, chat.loaded, chat.changing, chat.agent?.id, value.runtime, value.runtimeModel,
+    value.thinking, value.builtinModelThinking, onAgentModel]);
   const locked =
+    readOnly ||
     !chat.loaded ||
     chat.adding ||
     checkingReferences ||
     (chat.sending && !chat.started);
+  const latestReply = value.messages.at(-1);
+  const showSuggestions = open && !locked && !chat.changing && !chat.sending &&
+    chat.canSend && !pending && latestReply?.status === "complete";
+  const latest = useRef({ value, selectedNodes, open, showSuggestions });
+  latest.current = { value, selectedNodes, open, showSuggestions };
+  const currentRuntime = chat.runtimes.find((item) => item.id === (value.runtime ?? "default"));
+  const missingAgentModel = needsAgentModel(chat.loaded, currentRuntime, !!chat.agent);
   const referenceDisabled =
     !chat.loaded || chat.adding || checkingReferences || chat.sending;
-  const sessionDisabledReason = chat.changing
+  const sessionDisabledReason = readOnly ? t("canvas.workspace.preview.mode") : chat.changing
     ? t("assistant.sessions.disabled.switching")
     : !chat.loaded
       ? t("assistant.sessions.disabled.loading")
@@ -316,11 +333,11 @@ export function AssistantPanel({
   }
   const hoveredAsset = mediaPreview && displayedAssets.find(item => item.id === mediaPreview.assetId);
 
-  const latestReply = value.messages.at(-1);
   const latestUser = value.messages.at(-2);
   const latestTrace = latestReply?.role === "assistant" && latestUser?.role === "user" &&
     new URLSearchParams({
       traceProject: documentId,
+      ...(value.conversationId ? { conversation: value.conversationId } : {}),
       turn: latestUser.id,
       runtime: latestReply.runtime === "default" ? "opencode" : latestReply.runtime ?? "opencode",
       ...(latestReply.status === "streaming" ? { live: "1" } : {}),
@@ -413,6 +430,7 @@ export function AssistantPanel({
           const trace = message.role === "assistant" && message !== latestReply && message.status !== "streaming" &&
             previous?.role === "user" && new URLSearchParams({
               traceProject: documentId,
+              ...(value.conversationId ? { conversation: value.conversationId } : {}),
               turn: previous.id,
               runtime: message.runtime === "default" ? "opencode" : message.runtime ?? "opencode",
             });
@@ -424,14 +442,24 @@ export function AssistantPanel({
             {message.role === "assistant" && (
               <div className="cw-assistant-message-heading">
                 OpenDirector
-                {message.model && <small>{message.runtime === "deepseek"
+                {(message.modelIsCliDefault || message.model) && <small>{message.modelIsCliDefault
+                  ? t("assistant.agent.cliDefault")
+                  : message.runtime === "deepseek" && message.model
                   ? (deepseekLabels[message.model] ?? "DeepSeek Harness")
                   : message.model}</small>}
               </div>
             )}
             <div className="cw-assistant-message-text">
               {message.role === "assistant" ? (
-                <AssistantReply message={message} thinking={chat.thinkingNow} t={t} />
+                <AssistantReply
+                  message={message}
+                  thinking={chat.thinkingNow}
+                  t={t}
+                  onSuggestion={showSuggestions && message === latestReply ? (text) => {
+                    if (!latest.current.showSuggestions || latest.current.value !== value) return;
+                    editor.current?.replaceText(text);
+                  } : undefined}
+                />
               ) : message.role === "user" &&
                 (message.content || message.assets?.length) ? (
                 referenceContent(
@@ -524,6 +552,7 @@ export function AssistantPanel({
         <form
           className="cw-assistant-composer"
           aria-label={t("assistant.panel.composer")}
+          inert={readOnly}
           onSubmit={(event) => {
             event.preventDefault();
             pendingReferences.cancel();
@@ -561,7 +590,7 @@ export function AssistantPanel({
                     title={item.error ?? item.title}
                   >
                     {item.thumbnail && !item.error ? (
-                      <img src={item.thumbnail} alt="" />
+                      <AssetMedia as="img" src={item.thumbnail} alt="" />
                     ) : (
                       <CanvasIcon name={item.kind} size={20} />
                     )}
@@ -717,12 +746,7 @@ export function AssistantPanel({
               models={catalog.models}
               selections={value.modelSelections}
               disabled={!chat.loaded || !catalog.connected || chat.sending}
-              onChange={(kind, id) =>
-                setValue((previous) => ({
-                  ...previous,
-                  modelSelections: { ...previous.modelSelections, [kind]: id },
-                }))
-              }
+              onChange={chat.selectMediaModel}
               onConfigure={onOpenSettings}
             />
             <div className="cw-assistant-toolbar-spacer" />
@@ -751,7 +775,7 @@ export function AssistantPanel({
           </div>
         </form>
         <div className="cw-assistant-footnote">
-          {!chat.loaded ? (
+          {chat.availabilityIssue ? chat.availabilityIssue : !chat.loaded ? (
             chat.changing
               ? t("assistant.panel.switching")
               : chat.error
@@ -761,6 +785,13 @@ export function AssistantPanel({
             t("assistant.panel.checkingEngine")
           ) : chat.adding ? (
             t("assistant.panel.addingReferences")
+          ) : missingAgentModel ? (
+            <>
+              {t("assistant.agent.noAgentModels")}{" · "}
+              <button type="button" onClick={onOpenSettings}>
+                {t("assistant.agent.configureModel")}
+              </button>
+            </>
           ) : (
             `${chat.runtimes.find((item) => item.id === (value.runtime ?? "default"))?.label ?? t("assistant.panel.chooseAgent")}`
           )}
@@ -794,7 +825,7 @@ export function AssistantPanel({
         className="sr-only"
         type="file"
         multiple
-        accept="image/*,video/*,audio/*,text/*,.md,.markdown,.txt"
+        accept="image/*,.heic,.heif,video/*,audio/*,text/*,.md,.markdown,.txt"
         aria-label={t("assistant.panel.selectFiles")}
         onChange={(event) => {
           if (event.target.files?.length) void upload([...event.target.files]);

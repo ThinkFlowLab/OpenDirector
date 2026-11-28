@@ -10,7 +10,8 @@ from pydantic import ValidationError
 from opendirector.domain.creation.base import digest
 from opendirector.domain.creation.commands import Command, CommandReceipt, ProjectEvent, command_fingerprint
 from opendirector.domain.creation.project import ProjectSnapshot
-from opendirector.domain.creation.validation import ContractError, validate_command
+from opendirector.domain.creation.run_layout import reflow_runs
+from opendirector.domain.creation.validation import ContractError, validate_command, validate_published_plans
 from opendirector.domain.projects import ProjectError, identifier
 from opendirector.infrastructure.creation_files import cleanup_staging, delete_files, install_files
 from opendirector.infrastructure.creation_records import (
@@ -36,19 +37,14 @@ class CommitPublication:
     def replay(self, command):
         """Resolve an already committed command before reading upload handles."""
         self._await_current_warm(command.projectId)
-        with self.local.transaction() as db:
-            self._recover()
-            return self._replay(self._load(db, command.projectId)[2], command)
+        return self._replay(self.records(command.projectId), command)
 
     def commit(self, command: Command,
                apply: Callable[[ProjectSnapshot], ProjectSnapshot] | Callable[[ProjectSnapshot, tuple[CommitRecord, ...]], ProjectSnapshot], *,
                session=None, source='ui', files=(), deletes=(), with_history=False):
         if source not in {'ui', 'agent', 'background', 'external'}:
             raise ProjectError('无效的命令来源。')
-        self._await_current_warm(command.projectId)
-        with self.local.transaction() as db:
-            self._recover()
-            path, manifest, records = self._load(db, command.projectId)
+        with self._write_basis(command.projectId) as (db, path, manifest, records):
             replay = self._replay(records, command)
             if replay:
                 return replay
@@ -72,7 +68,16 @@ class CommitPublication:
                     raise ContractError('invalid_input', 'Services cannot replace project identity or event cursors')
                 if snapshot.project.name != before.project.name and command.type != 'project.rename':
                     raise ContractError('invalid_input', 'Only the rename command can rename a project')
+                validate_published_plans(command, before, snapshot)
                 changed = object_changes(before, snapshot, command)
+                operations = command.payload.operations if command.type == 'creation.batch' else (command,)
+                organize_runs = any(operation.type == 'canvas.layoutRuns' for operation in operations)
+                if organize_runs or any(item['version'].objectType == 'canvas_item' for item in changed):
+                    # All service writes passed their original CAS above. Only the
+                    # geometry derived from the locked current snapshot is exempt.
+                    snapshot, derived = reflow_runs(before, snapshot, force=organize_runs)
+                    if derived:
+                        changed = object_changes(before, snapshot, command, derived_canvas=derived)
                 if command.type == 'project.rename':
                     self.local._conflict(self.root, snapshot.project.name, path)
             except ContractError as error:

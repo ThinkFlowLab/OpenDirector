@@ -14,6 +14,9 @@ from test_kling_video import config as kling_config, task as kling_task
 from test_openai_images import CONFIG, png
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def resolve(monkeypatch):
     calls = []
@@ -77,6 +80,20 @@ def test_dns_names_and_mixed_answers_cannot_hide_private_addresses(resolve, addr
     with pytest.raises(GenerationError):
         generate(adapter)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('address', ['198.18.1.38', '2001:2::122'])
+def test_fake_ip_dns_rejection_explains_recovery_without_another_request(resolve, address):
+    resolve[0][:] = [address]
+    adapter, calls = image_from('https://cdn.test/result.png?signature=private')
+    with pytest.raises(GenerationError) as error:
+        generate(adapter)
+    details = error.value.details
+    assert (details.stage, details.category) == ('download', 'protocol')
+    assert '非公网地址' in details.message
+    assert '域名解析' in details.suggestion
+    assert 'signature' not in str(error.value) and CONFIG['apiKey'] not in str(error.value)
+    assert [call.method for call in calls] == ['POST']
 
 
 def test_public_download_pins_checked_ip_and_preserves_host_tls_and_signed_path(resolve):
@@ -157,6 +174,24 @@ def test_compatible_generation_recovery_uses_the_same_public_host_policy(resolve
     with pytest.raises(GenerationError):
         asyncio.run(provider.resume_result(CONFIG, 'png', 'http://127.0.0.1:8019/private'))
     assert calls == []
+
+
+@pytest.mark.parametrize('redirect', [False, True])
+def test_vllm_same_origin_result_without_credentials_never_follows_redirects(redirect):
+    config = dict(kind='video', url='http://127.0.0.1:9000/v1', modelId='custom-video',
+                  protocol='vllm_omni', connectionType='self_hosted', authMode='none', apiKey='')
+    calls = []
+    def handle(request):
+        calls.append(request)
+        if redirect: return httpx.Response(302, headers={'Location': '/result.mp4'})
+        return httpx.Response(200, content=b'video')
+    provider = GenerationProviders(None, httpx.MockTransport(handle))
+    if redirect:
+        with pytest.raises(GenerationError):
+            asyncio.run(provider.resume_result(config, 'mp4', config['url'] + '/content'))
+    else:
+        assert asyncio.run(provider.resume_result(config, 'mp4', config['url'] + '/content')) == ('mp4', b'video')
+    assert len(calls) == 1 and 'authorization' not in calls[0].headers
 
 
 @pytest.mark.parametrize('url', [

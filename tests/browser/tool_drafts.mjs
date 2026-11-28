@@ -219,6 +219,40 @@ try {
     await prompt().inputValue(),
     "Continue editing the actual output",
   );
+  // Continuing a result retains selection mode, but never reuses the old mask.
+  await page
+    .getByText("请先涂抹或识别需要修改的区域", { exact: true })
+    .waitFor();
+  assert.equal(await page.locator(".iae-generate").isDisabled(), true);
+  assert.equal((await tasks()).length, 1);
+  const continuedDrawing = page.locator("canvas.iae-ink-mask");
+  await continuedDrawing.waitFor();
+  const continuedRect = await continuedDrawing.boundingBox();
+  await page.mouse.move(
+    continuedRect.x + continuedRect.width * 0.55,
+    continuedRect.y + continuedRect.height * 0.3,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    continuedRect.x + continuedRect.width * 0.7,
+    continuedRect.y + continuedRect.height * 0.55,
+    { steps: 12 },
+  );
+  await page.mouse.up();
+  snapshot = await until(
+    state,
+    (s) => s.editorDocuments.some((d) => d.id === next.id && d.data.selection?.mask),
+    "saved selection for continued output",
+  );
+  const continued = snapshot.editorDocuments.find((d) => d.id === next.id);
+  const continuedMaskId = continued.data.selection.mask.assetId;
+  assert.equal(continued.data.selection.source.assetId, output.id);
+  assert.notEqual(continuedMaskId, maskId);
+  await until(
+    () => page.locator(".iae-generate").isEnabled(),
+    Boolean,
+    "continued selection ready",
+  );
   // Lose both acceptance and immediate lookup; reload and explicitly retry.
   // The browser must resend the original intent, not create another paid task.
   const sent = [];
@@ -239,6 +273,19 @@ try {
       await route.abort("failed");
     } else await route.continue();
   });
+  // The continued draft keeps selection mode and no mask, which disables
+  // generate. Mark mode is the whole-image edit this retry is asserting.
+  await page
+    .locator(".iae-segment")
+    .getByRole("button", { name: "标记", exact: true })
+    .click();
+  const annotation = page.locator("canvas.iae-ink");
+  await annotation.waitFor();
+  const mark = await annotation.boundingBox();
+  await page.mouse.move(mark.x + mark.width * 0.35, mark.y + mark.height * 0.45);
+  await page.mouse.down();
+  await page.mouse.move(mark.x + mark.width * 0.55, mark.y + mark.height * 0.55, { steps: 6 });
+  await page.mouse.up();
   await page.locator(".iae-generate").click();
   await until(async () => lookupLost, Boolean, "lost task lookup");
   await page.reload();
@@ -250,8 +297,26 @@ try {
       rows.length === 2 && rows.every((row) => row.status === "succeeded"),
     "accepted original attempt",
   );
+  const annotationId = sent[0].annotationAssetId;
+  assert.ok(annotationId, "painted annotation was uploaded before submission");
+  const annotationAsset = (await state()).assets.find((asset) => asset.id === annotationId);
+  assert.equal(annotationAsset?.metadata.mimeType, "image/png");
+  const annotationResponse = await fetch(
+    `${api}/api/creation/projects/${projectId}/assets/${annotationId}/content`,
+    { headers: { "X-OpenDirector-Request": "1" } },
+  );
+  assert.ok(annotationResponse.ok);
+  const bytes = await annotationResponse.arrayBuffer();
+  assert.equal(bytes.byteLength, annotationAsset.metadata.size);
+  const digest = Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
+  assert.equal(annotationAsset.fingerprint, `sha256:${digest}`);
+  assert.equal(sent[0].maskAssetId, continuedMaskId);
   await open(output.canvasItemId);
   await prompt().fill("New edits must not replace the unknown request");
+  await page
+    .locator(".iae-segment")
+    .getByRole("button", { name: "标记", exact: true })
+    .click();
   await page.locator(".iae-generate").click();
   await until(
     async () => sent.length,
@@ -269,7 +334,7 @@ try {
   await page.unroute(path);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS tool draft: real painted mask, saved parameters, reload, frozen input, source provenance, adopted output, independent continued editing and unknown submission replay after reload.",
+    "PASS tool draft: real painted mask and annotation upload, saved parameters, reload, frozen input, source provenance, adopted output, independent continued editing and unknown submission replay after reload.",
   );
 } finally {
   await browser.close();

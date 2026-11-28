@@ -98,16 +98,33 @@ try {
     (value) => !!value.modelSelections.agent,
     "Default model must be saved",
   );
+  // #246: repeated New on an empty or whitespace-only composer must not
+  // accumulate sessions. The current browser editor normalizes blank input
+  // to an empty draft; also click New while the composer still shows spaces.
+  const historyCount = async () => (await api(path + "/conversations")).items.length;
+  await create.click();
+  await create.click();
+  assert.equal(await historyCount(), 1, "New on an empty session must be reused");
+  assert.equal((await api(path)).conversationId, first.conversationId);
+  await editor.fill("   \n  ");
+  await create.click();
+  assert.equal(await historyCount(), 1, "Whitespace-only input must not open a second session");
+  assert.equal((await api(path)).conversationId, first.conversationId);
+  await editor.fill("");
+  await until(editorText, (value) => value === "", "Composer must be cleared before the first send");
   await editor.fill("海边短片");
   await panel.getByRole("button", { name: "发送消息", exact: true }).click();
   await until(
     () => api(path),
-    (value) => value.messages.at(-1)?.status === "complete",
-    "First reply must be persisted",
+    (value) =>
+      value.messages.at(-1)?.status === "complete" &&
+      value.activeTurnId === undefined,
+    "First reply must be persisted and release the active turn",
   );
   await panel
     .getByText("已收到创作要求。这是隔离测试回复。", { exact: true })
     .waitFor();
+  await panel.getByRole("button", { name: "停止回复", exact: true }).waitFor({ state: "hidden" });
 
   await editor.fill("海边草稿");
   await panel.getByLabel("选择对话参考文件", { exact: true }).setInputFiles({
@@ -264,6 +281,122 @@ try {
     !JSON.stringify(contexts.at(-1)).includes("海边短片"),
     "New session model context must not contain the old story",
   );
+
+  // Release the turn only after the full list has arrived in the stream.
+  const suggestions = panel.getByRole("group", { name: "建议回复", exact: true });
+  const send = panel.getByRole("button", { name: "发送消息", exact: true });
+  const choice = "展开海边重逢的完整分镜";
+  const listItems = panel.locator(".cw-chat-markdown ul").filter({ hasText: choice }).getByRole("listitem");
+  await api("/creation-test-assistant-gate", { open: false });
+  await editor.fill("建议回复验收");
+  await send.click();
+  await listItems.nth(3).waitFor();
+  assert.equal(await suggestions.count(), 0);
+  await api("/creation-test-assistant-gate", { open: true });
+  const options = suggestions.getByRole("button");
+  await options.last().waitFor();
+  assert.equal(await options.count(), 3);
+
+  const resize = panel.getByRole("separator", { name: "调整 AI 对话宽度" });
+  const bounds = await resize.boundingBox();
+  const x = bounds.x + bounds.width / 2;
+  const y = bounds.y + bounds.height / 2;
+  const rows = () => options.evaluateAll((buttons) =>
+    new Set(buttons.map((button) => button.getBoundingClientRect().top)).size,
+  );
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 240, y, { steps: 5 });
+  await page.mouse.up();
+  const wideRows = await rows();
+  const wideBounds = await resize.boundingBox();
+  await page.mouse.move(wideBounds.x + wideBounds.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 170, y, { steps: 5 });
+  await page.mouse.up();
+  assert.ok(await rows() > wideRows, "Suggested reply buttons should wrap as the panel narrows");
+  await resize.press("End");
+
+  const choiceButton = suggestions.getByRole("button", { name: choice, exact: true });
+  let turnRequests = 0;
+  page.on("request", (item) => {
+    if (item.method() === "POST" && item.url().endsWith("/assistant/turns")) turnRequests++;
+  });
+  await editor.fill("我想自己回复");
+  const typedDraft = await until(() => api(path), (value) => value.draft === "我想自己回复", "Save typed draft");
+  assert.ok(await choiceButton.isVisible(), "Suggestions should remain visible while drafting");
+  assert.equal(await choiceButton.getAttribute("title"), "用这条建议填写草稿");
+  await choiceButton.click();
+  const replacement = await until(() => api(path), (value) => value.draft === choice, "Save suggested text as a draft");
+  assert.deepEqual(replacement.messages, typedDraft.messages);
+  assert.equal(await editorText(), choice);
+  assert.ok(await editor.evaluate((element) => element === document.activeElement));
+  await editor.press("ControlOrMeta+z");
+  assert.equal(await editorText(), "我想自己回复");
+  await editor.fill("");
+  const beforeChoice = await until(() => api(path), (value) => value.draft === "", "Clear previous draft");
+  await choiceButton.click();
+  assert.equal(await editorText(), choice, "Selecting a suggestion should fill the empty composer");
+  const revised = choice + "！";
+  await page.keyboard.insertText("！");
+  const filled = await until(() => api(path), (value) => value.draft === revised, "Save the user's edit before sending");
+  assert.deepEqual(filled.messages, beforeChoice.messages);
+  assert.equal(turnRequests, 0);
+  const request = page.waitForRequest((item) =>
+    item.method() === "POST" && item.url().endsWith("/assistant/turns"),
+  );
+  await send.click();
+  const submitted = (await request).postDataJSON();
+  assert.equal(submitted.text, revised);
+  assert.deepEqual(submitted.content, filled.draftContent);
+  assert.deepEqual(submitted.assets, []);
+  const afterChoice = await until(
+    () => api(path),
+    (value) => value.messages.length === beforeChoice.messages.length + 2 &&
+      value.messages.at(-1)?.status === "complete",
+    "Manually sending a suggested reply must persist one ordinary user turn",
+  );
+  assert.equal(afterChoice.messages.at(-2).role, "user");
+  assert.equal(afterChoice.messages.at(-2).text, revised);
+  assert.equal(turnRequests, 1);
+  await suggestions.waitFor({ state: "detached" });
+  await listItems.nth(3).waitFor();
+
+  // A reference-only draft is editable too. Keep the attachment through replacement, reload and Send.
+  await editor.fill("建议回复验收");
+  await send.click();
+  await choiceButton.waitFor();
+  await panel.getByLabel("选择对话参考文件", { exact: true }).setInputFiles({
+    name: "shot-notes.txt", mimeType: "text/plain", buffer: Buffer.from("Storyboard notes"),
+  });
+  const attached = await until(() => api(path), (value) => value.assets.length === 1, "Save attachment");
+  await choiceButton.click();
+  await until(() => api(path), (value) => value.draft.includes(choice), "Save choice with attachment");
+  await panel.getByRole("button", { name: "使用技能", exact: true }).click();
+  await panel.getByRole("option", { name: /character-replacement/ }).click();
+  const alternate = "换一个安静克制的结尾";
+  await suggestions.getByRole("button", { name: alternate, exact: true }).click();
+  const edited = await until(() => api(path), (value) => value.draft.includes(alternate), "Replace the draft again");
+  assert.deepEqual(edited.messages, attached.messages);
+  assert.deepEqual(edited.assets, attached.assets);
+  assert.deepEqual(edited.draftContent.filter((part) => part.type === "reference"),
+    attached.draftContent.filter((part) => part.type === "reference"));
+  assert.deepEqual(edited.skills, ["character-replacement"]);
+  assert.deepEqual(edited.draftContent.filter((part) => part.type === "text").map((part) => part.text.trim()), [alternate]);
+  await page.reload();
+  await page.getByText("已保存到本机", { exact: true }).waitFor();
+  await show();
+  await until(editorText, (text) => text.includes(alternate) && text.includes("shot-notes.txt") &&
+    text.includes("/character-replacement"), "Restore edited draft");
+  const manualRequest = page.waitForRequest((item) => item.method() === "POST" && item.url().endsWith("/assistant/turns"));
+  await send.click();
+  const manual = (await manualRequest).postDataJSON();
+  assert.equal(manual.text, edited.draft);
+  assert.deepEqual(manual.content, edited.draftContent);
+  assert.deepEqual(manual.skills, edited.skills);
+  assert.deepEqual(manual.assets, edited.assets.map((asset) => asset.id));
+  await until(() => api(path), (value) => value.messages.length === edited.messages.length + 2 &&
+    value.messages.at(-1)?.status === "complete", "Complete the manually submitted turn");
 
   // History stays inside a narrow assistant, closes outside, and all header controls fit.
   await panel.evaluate((element) =>

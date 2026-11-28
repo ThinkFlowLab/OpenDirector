@@ -1,3 +1,4 @@
+import { projectDisplayName } from "./projectDisplayName";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { CanvasIcon } from "./CanvasIcon";
 import { ProjectDeleteDialog } from "./ProjectDeleteDialog";
@@ -14,28 +15,38 @@ import { useT } from "../i18n/I18nProvider";
 
 const ACTION_MENU_HEIGHT = 92;
 
+function openProjectInNewTab(project: WorkspaceProject) {
+  window.open(`/ai-tool/ai-canvas/${encodeURIComponent(project.id)}`, "_blank", "noopener");
+}
+
 export function ProjectSelector({
   currentId,
+  readOnly = false,
   editNameForId,
   name,
   disabled,
   onSelect,
   onCreate,
+  onExamples,
   onRename,
   onRenameProject,
   onDeleteProject,
 }: {
   currentId: string;
+  readOnly?: boolean;
   editNameForId?: string | null;
   name: string;
   disabled: boolean;
   onSelect: (project: WorkspaceProject) => Promise<boolean>;
   onCreate: () => void;
+  /** Opens the example canvas picker; omitted where it is not offered. */
+  onExamples?: () => void;
   onRename: (name: string) => Promise<void>;
   onRenameProject: (project: WorkspaceProject, name: string) => Promise<void>;
   onDeleteProject: (project: WorkspaceProject) => Promise<void>;
 }) {
   const t = useT();
+  const canOpenInNewTab = !window.opendirectorDesktop;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
@@ -85,14 +96,14 @@ export function ProjectSelector({
   }, [currentId]);
   const editedNewProject = useRef<string | null>(null);
   useEffect(() => {
-    if (disabled || editNameForId !== currentId || editedNewProject.current === currentId) return;
+    if (readOnly || disabled || editNameForId !== currentId || editedNewProject.current === currentId) return;
     editedNewProject.current = currentId;
     setOpen(false);
     setDraftName(name);
     setRenameError("");
     editingRef.current = true;
     setEditing(true);
-  }, [currentId, editNameForId, disabled, name]);
+  }, [currentId, editNameForId, disabled, name, readOnly]);
   const closeActions = useCallback((restoreFocus: boolean) => {
     setActions((current) => {
       if (current && restoreFocus)
@@ -146,6 +157,7 @@ export function ProjectSelector({
     setBusy(true);
     setRenameError("");
     try {
+      if (readOnly) return false;
       await onRename(nextName);
       finishEditing(restoreFocus);
       return true;
@@ -203,7 +215,13 @@ export function ProjectSelector({
   useEffect(() => {
     if (!open) setActions(null);
   }, [open]);
-  const filteredProjects = projects.filter(project => project.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const needle = query.trim().toLocaleLowerCase();
+  const filteredProjects = projects
+    .map((project) => ({
+      project,
+      displayName: projectDisplayName(t, project.name, project.defaultNameIndex),
+    }))
+    .filter(({ displayName }) => displayName.toLocaleLowerCase().includes(needle));
   useEffect(() => {
     if (open) searchInput.current?.focus();
     else setQuery("");
@@ -296,7 +314,7 @@ export function ProjectSelector({
           <button
             className="cw-project-name"
             ref={nameButton}
-            disabled={disabled || busy}
+            disabled={readOnly || disabled || busy}
             title={t("canvas.project.editNameHint")}
             onKeyDown={(event) => {
               // Focus returns here after saving; a held submit key must not reopen editing.
@@ -386,15 +404,25 @@ export function ProjectSelector({
                 {t("canvas.project.loading")}
               </p>
             ) : (
-              filteredProjects.map((project) => (
-                <div className="cw-project-row" key={project.id}>
+              filteredProjects.map(({ project, displayName }) => (
+                <div className="cw-project-row" data-new-tab={canOpenInNewTab} key={project.id}>
                   <button
                     role="menuitemradio"
                     aria-checked={project.id === currentId}
                     disabled={disabled || busy}
                     className="cw-project-option"
-                    title={project.name}
-                    onClick={async () => {
+                    title={displayName}
+                    onContextMenu={(event) => {
+                      // macOS delivers Control + primary click as a context menu.
+                      if (!canOpenInNewTab || disabled || busy || !event.ctrlKey || event.button !== 0) return;
+                      event.preventDefault();
+                      openProjectInNewTab(project);
+                    }}
+                    onClick={async (event) => {
+                      if (canOpenInNewTab && (event.ctrlKey || event.metaKey)) {
+                        openProjectInNewTab(project);
+                        return;
+                      }
                       if (project.id === currentId) {
                         setOpen(false);
                         return;
@@ -414,7 +442,7 @@ export function ProjectSelector({
                       <CanvasIcon name="group" size={18} />
                     </span>
                     <span className="cw-project-option-name">
-                      {project.name}
+                      {displayName}
                     </span>
                     {project.id === currentId && (
                       <span className="cw-project-check">
@@ -431,20 +459,34 @@ export function ProjectSelector({
                         actionButtons.current.set(project.id, element);
                       else actionButtons.current.delete(project.id);
                     }}
-                    disabled={disabled || busy}
+                    disabled={readOnly || disabled || busy}
                     aria-label={t("canvas.project.actionsFor", {
-                      name: project.name,
+                      name: displayName,
                     })}
                     title={t("canvas.project.actions")}
                     aria-haspopup="menu"
                     aria-expanded={actions?.id === project.id}
                     onClick={(event) => {
+                      if (readOnly) return;
                       if (actions?.id === project.id) closeActions(true);
                       else openActions(project, event.currentTarget);
                     }}
                   >
                     <CanvasIcon name="more" size={18} />
                   </button>
+                  {canOpenInNewTab && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="cw-project-open-tab"
+                      disabled={disabled || busy}
+                      aria-label={t("canvas.project.openInNewTabFor", { name: displayName })}
+                      title={t("canvas.project.openInNewTab")}
+                      onClick={() => openProjectInNewTab(project)}
+                    >
+                      <CanvasIcon name="arrowUpRight" size={18} />
+                    </button>
+                  )}
                 </div>
               ))
             )}
@@ -453,7 +495,7 @@ export function ProjectSelector({
             <button
               className="cw-project-cleanup"
               role="menuitem"
-              disabled={busy || loading || disabled}
+              disabled={readOnly || busy || loading || disabled}
               onClick={() => setCleanupOpen(true)}
             >
               <span>
@@ -462,13 +504,27 @@ export function ProjectSelector({
               <CanvasIcon name="trash" size={18} />
             </button>
           )}
+          {onExamples && (
+            <button
+              className="cw-project-examples"
+              role="menuitem"
+              disabled={readOnly || busy || loading || disabled}
+              onClick={() => {
+                setOpen(false);
+                if (!readOnly) onExamples();
+              }}
+            >
+              <span>{t("canvas.project.examples")}</span>
+              <CanvasIcon name="clapperboard" size={18} />
+            </button>
+          )}
           <button
             className="cw-project-create"
             role="menuitem"
-            disabled={busy || loading || disabled}
+            disabled={readOnly || busy || loading || disabled}
             onClick={() => {
               setOpen(false);
-              onCreate();
+              if (!readOnly) onCreate();
             }}
           >
             <span>{t("canvas.project.create")}</span>
@@ -522,18 +578,18 @@ export function ProjectSelector({
           hint={t("canvas.project.renameHint")}
           onClose={() => setRenameTarget(null)}
           onSubmit={async (nextName) => {
-            await onRenameProject(renameTarget, nextName);
+            if (!readOnly) await onRenameProject(renameTarget, nextName);
             await loadProjects();
           }}
         />
       )}
       {deleteTarget && (
         <ProjectDeleteDialog
-          name={deleteTarget.name}
+          name={projectDisplayName(t, deleteTarget.name, deleteTarget.defaultNameIndex)}
           recycleBin={recycleBin}
           onClose={() => setDeleteTarget(null)}
           onSubmit={async () => {
-            await onDeleteProject(deleteTarget);
+            if (!readOnly) await onDeleteProject(deleteTarget);
             // The project is gone on the server; drop the row in place instead
             // of another full list read before the dialog can close. The next
             // selector open reloads the authoritative list.
@@ -557,6 +613,7 @@ export function ProjectSelector({
           recycleBin={recycleBin}
           onClose={() => setCleanupOpen(false)}
           onSubmit={async () => {
+            if (readOnly) return;
             const result = await cleanupUnreadableWorkspaceProjects();
             await loadProjects();
             if (result.failed.length) {

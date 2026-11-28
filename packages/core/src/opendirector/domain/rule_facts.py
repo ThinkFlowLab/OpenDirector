@@ -23,6 +23,14 @@ TIMELINE_TEXT_MAX_LENGTH = 4096
 TIMELINE_TEXT_TOTAL_LENGTH = 200000
 TIMELINE_FONT_BYTES = 32 * 1024 * 1024
 TIMELINE_FONT_TOTAL_BYTES = 64 * 1024 * 1024
+# A clip's out point is seeded from the duration a probe reported, so comparing
+# it against a later measurement must tolerate re-probing noise. Durations also
+# travel through millisecond-rounded fields (`durationMs`), so a stored value can
+# sit up to half a millisecond past the measured one: a 121-frame clip at 24 fps
+# is 5.041667s and is announced as 5042ms, which is 5.042s. Rounding to the
+# nearest millisecond is the widest error a caller can introduce, so half a
+# millisecond is the tolerance every boundary shares.
+TIMELINE_DURATION_EPSILON = 0.0005
 FRAME_IMAGE_LIMIT = 2
 PROMPT_MAX_LENGTH = 20000
 TEXT_MAX_TOKENS = 32768
@@ -34,6 +42,8 @@ MUSIC_SECONDS_MAX = 360
 MUSIC_SECONDS_INITIAL = 30
 REFERENCE_MEDIA_SECONDS = 15
 FASTH3_MEDIA_REFERENCE_LIMIT = 12
+# FastH3 structure control: the control video sets the output length (long_video_mode=full up to 30 s).
+CONTROL_VIDEO_SECONDS = (4, 30)
 # Identifiers sent to a speech adapter. Stored specs may also keep a Unicode
 # display name; that contract pattern is STORED_VOICE_PATTERN and is not a
 # JavaScript \\w check.
@@ -52,6 +62,7 @@ def facts_payload():
         'timelineTextTotalLength': TIMELINE_TEXT_TOTAL_LENGTH,
         'timelineFontBytes': TIMELINE_FONT_BYTES,
         'timelineFontTotalBytes': TIMELINE_FONT_TOTAL_BYTES,
+        'timelineDurationEpsilon': TIMELINE_DURATION_EPSILON,
         'maxReferences': MAX_REFERENCES,
         'textReferenceBytes': TEXT_REFERENCE_BYTES,
         'agentImageBytes': AGENT_IMAGE_BYTES,
@@ -66,6 +77,7 @@ def facts_payload():
         'musicSecondsInitial': MUSIC_SECONDS_INITIAL,
         'referenceMediaSeconds': REFERENCE_MEDIA_SECONDS,
         'fasth3MediaReferenceLimit': FASTH3_MEDIA_REFERENCE_LIMIT,
+        'controlVideoSeconds': list(CONTROL_VIDEO_SECONDS),
         'serviceVoicePattern': SERVICE_VOICE_PATTERN,
         'storedVoicePattern': STORED_VOICE_PATTERN,
         'videoAspectRatios': list(VIDEO_ASPECT_RATIOS),
@@ -84,13 +96,19 @@ def aspect_ratio_choices(spec):
     if kind == 'image':
         return ['auto', *_unique(ratio for ratio in spec.get('imageOutputRatios') or [] if ratio != 'auto')]
     if kind == 'video' and published is not None:
-        if video_mode == 'first-last':
+        if video_mode == 'control' or video_mode == 'first-last' and spec.get('protocol') != 'higgsfield_open':
             return ['auto']
         return ['auto', *list(published)]
     framed = spec.get('protocol') == 'volcengine' or bool(spec.get('dimensioned'))
-    if kind == 'video' and video_mode != 'continuation' and framed:
+    if kind == 'video' and video_mode not in {'continuation', 'control'} and framed:
         return ['auto', *VIDEO_ASPECT_RATIOS]
     return ['auto']
+
+
+def duration_matches(seconds: float, durations: list[int] | tuple[int, ...], fractional: bool = False) -> bool:
+    if fractional:
+        return bool(durations) and min(durations) <= seconds <= max(durations)
+    return seconds in durations
 
 
 def resolution_choices(spec):
@@ -113,7 +131,7 @@ def resolution_choices(spec):
     duration = spec.get('durationSeconds')
     if outputs is not None and duration is not None:
         choices = [label for label in choices
-                   if any(item['resolution'] == label and duration in item['durations'] for item in outputs)]
+                   if any(item['resolution'] == label and duration_matches(duration, item['durations'], spec.get('fractionalDuration', False)) for item in outputs)]
     return ['auto', *choices]
 
 
@@ -124,8 +142,8 @@ def effective_video_mode(spec):
     the model allows it. The same function freezes a job and fills the menu.
     """
     mode = spec.get('mode')
-    if mode == 'continuation':
-        return 'continuation'
+    if mode in {'continuation', 'control'}:
+        return mode
     if mode in {'first-last', 'first_frame'}:
         return 'first_frame'
     if spec.get('configured') and 'first_frame' not in (spec.get('allowedModes') or []):
@@ -150,7 +168,14 @@ def reference_byte_limit(spec):
         return AGENT_IMAGE_BYTES if spec.get('imageBytes') is None else spec['imageBytes']
     if kind == 'video':
         return DEFAULT_VIDEO_BYTES if spec.get('videoBytes') is None else spec['videoBytes']
+    if kind == 'audio' and spec.get('audioBytes') is not None:
+        return spec['audioBytes']
     return DEFAULT_VIDEO_BYTES
+
+
+def prompt_optional_with_media(spec):
+    """MAGI-2 image/reference endpoints allow an omitted prompt."""
+    return spec.get('profile') == 'higgsfield-magi-2' and bool(spec.get('hasMedia'))
 
 
 DERIVATIONS = {
@@ -159,9 +184,17 @@ DERIVATIONS = {
     'effectiveVideoMode': effective_video_mode,
     'generateAudioOptions': generate_audio_options,
     'referenceByteLimit': reference_byte_limit,
+    'promptOptionalWithMedia': prompt_optional_with_media,
 }
 
 _CASES = (
+    ('magi2-image-ratios', 'aspectRatioChoices', {
+        'kind': 'video', 'videoMode': 'first-last', 'publishedRatios': ['16:9', '9:16'],
+        'protocol': 'higgsfield_open', 'dimensioned': False, 'imageOutputRatios': []}),
+    ('magi2-audio-bytes', 'referenceByteLimit', {'kind': 'audio', 'audioBytes': 15 * 1024 * 1024}),
+    ('magi2-media-prompt-optional', 'promptOptionalWithMedia', {'profile': 'higgsfield-magi-2', 'hasMedia': True}),
+    ('magi2-text-prompt-required', 'promptOptionalWithMedia', {'profile': 'higgsfield-magi-2', 'hasMedia': False}),
+    ('other-model-prompt-required', 'promptOptionalWithMedia', {'profile': 'minimax-h3-official', 'hasMedia': True}),
     ('image-ratios-drop-auto-and-duplicates', 'aspectRatioChoices', {
         'kind': 'image', 'videoMode': None, 'publishedRatios': None, 'protocol': None,
         'dimensioned': False, 'imageOutputRatios': ['16:9', 'auto', '16:9', '1:1']}),
@@ -246,6 +279,8 @@ _CASES = (
         'durationSeconds': 5, 'capabilityOutputs': []}),
     ('continuation-mode', 'effectiveVideoMode', {
         'mode': 'continuation', 'allowedModes': ['first_frame'], 'hasNonTextMedia': False, 'configured': True}),
+    ('control-mode', 'effectiveVideoMode', {
+        'mode': 'control', 'allowedModes': ['reference', 'control'], 'hasNonTextMedia': True, 'configured': True}),
     ('first-last-mode', 'effectiveVideoMode', {
         'mode': 'first-last', 'allowedModes': ['reference'], 'hasNonTextMedia': True, 'configured': True}),
     ('stored-first-frame-mode', 'effectiveVideoMode', {
@@ -313,13 +348,14 @@ export function aspectRatioChoices(input: {
     ];
   }
   if (input.kind === "video" && input.publishedRatios != null) {
-    if (input.videoMode === "first-last") return ["auto"];
+    if (input.videoMode === "control" || input.videoMode === "first-last" && input.protocol !== "higgsfield_open") return ["auto"];
     return ["auto", ...input.publishedRatios];
   }
   const framed = input.protocol === "volcengine" || input.dimensioned;
   if (
     input.kind === "video" &&
     input.videoMode !== "continuation" &&
+    input.videoMode !== "control" &&
     framed
   ) {
     return ["auto", ...RULE_FACTS.videoAspectRatios];
@@ -327,7 +363,14 @@ export function aspectRatioChoices(input: {
   return ["auto"];
 }
 
+export function durationMatches(seconds: number, durations: readonly number[], fractional = false): boolean {
+  return fractional
+    ? durations.length > 0 && seconds >= Math.min(...durations) && seconds <= Math.max(...durations)
+    : durations.includes(seconds);
+}
+
 export function resolutionChoices(input: {
+  readonly fractionalDuration?: boolean;
   readonly kind: string;
   readonly videoMode?: string | null;
   readonly aspectRatio?: string | null;
@@ -371,7 +414,7 @@ export function resolutionChoices(input: {
       ? choices.filter((label) =>
           outputs.some(
             (item) =>
-              item.resolution === label && item.durations.includes(duration),
+              item.resolution === label && durationMatches(duration, item.durations, input.fractionalDuration),
           ),
         )
       : choices;
@@ -383,8 +426,8 @@ export function effectiveVideoMode(input: {
   readonly allowedModes: readonly string[];
   readonly hasNonTextMedia: boolean;
   readonly configured: boolean;
-}): "continuation" | "first_frame" | "reference" {
-  if (input.mode === "continuation") return "continuation";
+}): "continuation" | "control" | "first_frame" | "reference" {
+  if (input.mode === "continuation" || input.mode === "control") return input.mode;
   if (input.mode === "first-last" || input.mode === "first_frame") {
     return "first_frame";
   }
@@ -406,6 +449,7 @@ export function referenceByteLimit(input: {
   readonly kind: string;
   readonly imageBytes?: number | null;
   readonly videoBytes?: number | null;
+  readonly audioBytes?: number | null;
 }): number {
   if (input.kind === "text") return RULE_FACTS.textReferenceBytes;
   if (input.kind === "image") {
@@ -414,7 +458,15 @@ export function referenceByteLimit(input: {
   if (input.kind === "video") {
     return input.videoBytes ?? RULE_FACTS.defaultVideoBytes;
   }
+  if (input.kind === "audio" && input.audioBytes != null) return input.audioBytes;
   return RULE_FACTS.defaultVideoBytes;
+}
+
+export function promptOptionalWithMedia(input: {
+  readonly profile?: string;
+  readonly hasMedia: boolean;
+}): boolean {
+  return input.profile === "higgsfield-magi-2" && input.hasMedia;
 }
 
 export const RULE_DERIVATION_VECTORS = __VECTORS__ as const;

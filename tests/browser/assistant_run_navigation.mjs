@@ -42,10 +42,26 @@ const create = async (name) => {
 };
 const tag = crypto.randomUUID().slice(0, 8);
 const nameA = `导航 A ${tag}`,
-  nameB = `导航 B ${tag}`;
+  nameB = `导航 B ${tag}`,
+  nameC = `导航 C ${tag}`;
 const projectA = await create(nameA);
-await create(nameB);
+const projectB = await create(nameB);
+await create(nameC);
 const path = `/creation/projects/${projectA}/assistant`;
+const otherPath = `/creation/projects/${projectB}/assistant`;
+const videoModel = (modelId) =>
+  api("/model-configs", {
+    kind: "video",
+    modelId,
+    url: "http://127.0.0.1:12345/v1",
+    apiKey: "",
+    connectionType: "self_hosted",
+    protocol: "vllm_omni",
+    authMode: "none",
+    capabilityAutoCheck: false,
+  });
+const firstVideo = await videoModel(`a-navigation-video-${tag}`);
+const chosenVideo = await videoModel(`z-navigation-video-${tag}`);
 
 const browser = await launchBrowser();
 try {
@@ -78,7 +94,8 @@ try {
     }),
   );
   await page.addInitScript((id) => {
-    localStorage.setItem("opendirector.lastUnifiedFilesystemProject", id);
+    const key = "opendirector.lastUnifiedFilesystemProject";
+    if (!localStorage.getItem(key)) localStorage.setItem(key, id);
     localStorage.setItem("opendirector.modelSetup.v1", "dismissed");
     localStorage.setItem("opendirector.locale.v1", "zh-CN");
   }, projectA);
@@ -101,6 +118,27 @@ try {
   const switchTo = async (name) => {
     await page.getByRole("button", { name: "切换项目", exact: true }).click();
     await page.getByRole("menuitemradio", { name, exact: true }).click();
+    await page
+      .locator('[data-testid="canvas-workspace"][aria-busy="false"] .cw-project-heading')
+      .getByText(name, { exact: true })
+      .waitFor();
+  };
+  const videoOption = async (model) => {
+    await show();
+    await panel
+      .getByRole("button", { name: "模型配置：媒体模型", exact: true })
+      .click();
+    await panel.getByRole("tab", { name: /^视频/ }).click();
+    return panel.getByRole("option", { name: model.modelId, exact: true });
+  };
+  const assertSelectedVideo = async (model) => {
+    const option = await videoOption(model);
+    await until(
+      () => option.getAttribute("aria-selected"),
+      (selected) => selected === "true",
+      `Expected selected video model ${model.modelId}`,
+    );
+    await option.press("Escape");
   };
   await show();
   await until(
@@ -126,7 +164,12 @@ try {
     (id) => id && id !== projectA,
     "Project B must open",
   );
-  await page.waitForTimeout(1000);
+  const initialB = await until(
+    () => api(otherPath),
+    (value) => !!value.modelSelections.video,
+    "Project B must first persist its automatic video default",
+  );
+  assert.notEqual(initialB.modelSelections.video, chosenVideo.id);
   const away = await api(path);
   assert.equal(away.messages.at(-1).status, "streaming", "reply after leaving");
   assert.ok(away.activeTurnId, "the run continues while away");
@@ -143,12 +186,14 @@ try {
   await panel
     .getByText("已收到创作要求。这是隔离测试回复。", { exact: true })
     .waitFor();
-  const done = await until(
+  // The reply is persisted before the Agent releases the active turn.
+  await until(
     () => api(path),
-    (value) => value.messages.at(-1).status === "complete",
-    "Reply must complete",
+    (value) =>
+      value.messages.at(-1)?.status === "complete" &&
+      value.activeTurnId === undefined,
+    "Reply must complete and release the active turn",
   );
-  assert.equal(done.activeTurnId, undefined);
   assert.deepEqual(stops, [], "navigation must not call stop");
 
   // An explicit stop after leaving and returning still stops the run.
@@ -169,13 +214,51 @@ try {
   const stop = panel.getByRole("button", { name: "停止回复", exact: true });
   await until(() => stop.isEnabled(), Boolean, "Stop must be available");
   await stop.click();
-  const stopped = await until(
+  await until(
     () => api(path),
-    (value) => value.messages.at(-1).status === "stopped",
-    "Explicit stop must persist",
+    (value) =>
+      value.messages.at(-1)?.status === "stopped" &&
+      value.activeTurnId === undefined,
+    "Explicit stop must persist and release the active turn",
   );
-  assert.equal(stopped.activeTurnId, undefined);
   await panel.getByText("已停止回复").waitFor();
+
+  // An explicit media preference supersedes an auto-filled model in another project.
+  await (await videoOption(chosenVideo)).click();
+  await until(
+    () => api(path),
+    (value) => value.modelSelections.video === chosenVideo.id,
+    "Project A must store the selected video model",
+  );
+  await page.reload();
+  await assertSelectedVideo(chosenVideo);
+  await switchTo(nameB);
+  await assertSelectedVideo(chosenVideo);
+
+  await api("/creation-test-assistant-gate", { open: true });
+  const submit = page.waitForRequest(
+    (request) => request.method() === "POST" &&
+      request.url().endsWith(`${otherPath}/turns`),
+  );
+  await editor.fill("媒体模型默认值验收");
+  await panel.getByRole("button", { name: "发送消息", exact: true }).click();
+  assert.equal((await submit).postDataJSON().modelSelections.video, chosenVideo.id);
+  await until(
+    () => api(otherPath),
+    (value) => value.messages.at(-1)?.status === "complete",
+    "Project B reply must finish before changing its preferred model",
+  );
+
+  await switchTo(nameC);
+  await assertSelectedVideo(chosenVideo);
+  await switchTo(nameB);
+
+  // A new explicit choice in B must not overwrite A's own choice.
+  await (await videoOption(firstVideo)).click();
+  await page.reload();
+  await assertSelectedVideo(firstVideo);
+  await switchTo(nameA);
+  await assertSelectedVideo(chosenVideo);
   assert.deepEqual(errors, []);
   console.log("assistant run navigation ok");
 } finally {

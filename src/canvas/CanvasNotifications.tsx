@@ -5,14 +5,20 @@ import { useT } from "../i18n/I18nProvider";
 interface CanvasNotification {
   id: number;
   message: string;
+  /** A failure, drawn in the danger colour and announced as an alert. */
+  error?: boolean;
 }
 
 export function useCanvasNotifications() {
   const [notifications, setNotifications] = useState<CanvasNotification[]>([]);
   const sequence = useRef(0);
-  const notify = useCallback((message: string) => {
+  const notify = useCallback((message: string, options?: { error?: boolean }) => {
     if (!message) return;
-    const notification = { id: ++sequence.current, message };
+    const notification = {
+      id: ++sequence.current,
+      message,
+      ...(options?.error ? { error: true } : {}),
+    };
     setNotifications((current) => [...current, notification]);
   }, []);
   const dismiss = useCallback((id: number) => {
@@ -61,7 +67,7 @@ function Notification({
     <div className={`cw-toast-slot${exiting ? " cw-toast-slot-exiting" : ""}`}>
       <div className="cw-toast-clip">
         <div
-          className={`cw-toast${exiting ? " cw-toast-exiting" : ""}`}
+          className={`cw-toast${notification.error ? " is-error" : ""}${exiting ? " cw-toast-exiting" : ""}`}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           onFocus={() => setFocused(true)}
@@ -70,7 +76,10 @@ function Notification({
               setFocused(false);
           }}
         >
-          <span role="status" aria-atomic="true">
+          <span
+            role={notification.error ? "alert" : "status"}
+            aria-atomic="true"
+          >
             {notification.message}
           </span>
           <button

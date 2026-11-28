@@ -1,10 +1,10 @@
 """Image edit recipes: reframing, cleanup, presets, and poster motion."""
 import json
-from dataclasses import dataclass
 
 from PIL import Image
 
 from opendirector.application.tool_context import Output, ToolContext, _source_image, _with, image_output
+from opendirector.domain.image_presets import PRESETS, preset_instructions
 from opendirector.domain.projects import ProjectError
 from opendirector.media import processing as media
 
@@ -27,15 +27,16 @@ async def _extend(ctx: ToolContext, image: Image.Image, pads, prompt: str) -> Im
     Instruction editors ignore strength and recompose a padded canvas instead of
     filling it, so they are asked to pull the camera back over the original.
     """
-    if not ctx.edit_keeps_layout:
+    if not ctx.edit_keeps_layout and not ctx.native_mask:
         await ctx.progress('正在扩展画面')
         width, height = image.width + pads[0] + pads[2], image.height + pads[1] + pads[3]
         return await ctx.reframe(image, width, height, _with(prompt, (
             f'镜头拉远，扩展画面：{_placement(pads, image.width, image.height)}。保持原图中的人物、物体、服饰、场景、色调与光线完全一致，'
             '延续原有的透视与风格，画面完整自然，不要边框、白边或拼接痕迹')))
-    canvas, _ = media.extend_canvas(image, *pads)
+    canvas, region = media.extend_canvas(image, *pads)
     await ctx.progress('正在扩展画面')
-    drawn = await ctx.edit(canvas, _with(prompt, '自然延展画面四周，与原图内容、风格、透视和光线保持一致，无边框无拼接痕迹'), 0.9)
+    drawn = await ctx.edit(canvas, _with(prompt, '自然延展画面四周，与原图内容、风格、透视和光线保持一致，无边框无拼接痕迹'), 0.9,
+                           mask=region)
     # The redraw shifts tone slightly; a wide ramp inside the original hides the seam.
     inset = max(8, min(image.size) // 8)
     left, top, right, bottom = pads
@@ -62,12 +63,15 @@ async def smart_edit(ctx: ToolContext):
     if not instruction:
         raise ProjectError('请描述要如何修改图片。', 422)
     await ctx.progress('正在按描述改图')
-    input_image, references = image, ()
+    input_image, references, reference = image, (), None
     if mode != 'selection' and ctx.annotation:
         marked = media.open_image(ctx.annotation)
         if marked.size != image.size:
             raise ProjectError('标注图片尺寸必须与原图一致。', 422)
-        if ctx.edit_max_images > 1:
+        if ctx.native_mask:
+            reference = media.rgb_png(marked)
+            instruction += '。参考图是原图上的编辑标记，请根据标记理解位置与意图'
+        elif ctx.edit_max_images > 1:
             references = (media.rgb_png(marked),)
             instruction += '。第二张图是第一张图上的编辑标记，请根据标记理解位置与意图'
         else:
@@ -76,10 +80,12 @@ async def smart_edit(ctx: ToolContext):
         instruction += '，完成修改后移除这些辅助标记'
     if mode != 'annotation' and ctx.mask:
         instruction += '。这是原图上的局部修改，请严格保持原图构图、镜头、主体位置、大小和姿势，使编辑结果与原图逐像素对齐'
-    edited = await ctx.edit(input_image, instruction + '。保持未提及的内容不变', 0.78, references=references)
+    region = media.mask_from(ctx.mask, image.size) if mode != 'annotation' and ctx.mask else None
+    edited = await ctx.edit(input_image, instruction + '。保持未提及的内容不变', 0.78,
+                            references=references, mask=region, reference=reference)
     if mode != 'annotation' and ctx.mask:
         # A selection is an exact editing boundary: pixels outside it stay original.
-        edited = media.blend(image, edited, media.mask_from(ctx.mask, image.size))
+        edited = media.blend(image, edited, region)
     return [image_output(edited, '智能改图')]
 
 async def outpaint(ctx: ToolContext):
@@ -117,7 +123,8 @@ async def inpainting_remove(ctx: ToolContext):
         raise ProjectError('请先涂抹需要消除的区域。', 422)
     mask = media.mask_from(ctx.mask, image.size)
     await ctx.progress('正在消除并填补')
-    drawn = await ctx.edit(media.soften_region(image, mask), '移除涂抹区域中的物体与文字，用周围环境自然填补，画面干净完整', 0.8)
+    drawn = await ctx.edit(image if ctx.native_mask else media.soften_region(image, mask),
+                           '移除涂抹区域中的物体与文字，用周围环境自然填补，画面干净完整', 0.8, mask=mask)
     return [image_output(media.blend(image, drawn, media.feather(mask, max(3, min(image.size) / 120))), '消除笔')]
 
 def _yaw_text(yaw):
@@ -161,52 +168,12 @@ async def panorama(ctx: ToolContext):
     edge = {'4K': 4096, '2K': 2048}.get(ctx.parameters.get('resolution'), 2048)
     return [image_output(media.resize(result, edge, edge // 2), '720 全景')]
 
-@dataclass(frozen=True)
-class ImagePreset:
-    title: str
-    prompts: tuple[str, ...]
-    size: tuple[int, int] = (2048, 1152)
-
-PRESETS = {
-    # Written as edit instructions: editing models follow imperatives, not captions.
-    'three-view': ImagePreset('人物三视图', (
-        '以参考图中的人物为唯一身份依据，生成同一人物的全身三视图设定板。'
-        '横版画面分为三个等宽区域，从左至右严格排列：正面全身、右侧90度全身、背面全身。'
-        '三个视图保持同一身份、年龄、体型、头身比、发型、服装、配色、材质及配饰，衣服结构与细节相互对应。'
-        '全部自然站立、双臂放松，同一高度与地面基线，完整呈现头顶到鞋底，不裁头、不切脚、不遮挡、不重叠。'
-        '若原图仅有半身，依据可见服装合理补全下半身，补全部分在三个视角保持一致。'
-        '保持参考图画风，纯净浅灰背景、均匀柔光、弱透视，无剧情场景、文字、标签、水印、分割线或额外视图。',)),
-    'face-three-view': ImagePreset('面部三视图', (
-        '以参考图人物的面部为唯一身份依据，生成同一人物的面部三视图参考板。'
-        '3:1超宽横版画面均分为三个等宽区域，从左至右严格排列：正面、左侧90度、右侧90度。'
-        '第二格（左侧90度）鼻尖朝向画面右方，第三格（右侧90度）鼻尖朝向画面左方；'
-        '两张侧脸朝向相反、左右镜像对称，不要输出两张朝向相同的侧脸。'
-        '每个区域只放一个居中的头肩像，三个头像之间留有自然间隔，不接触、不重叠、不粘连。'
-        '每个视图只呈现完整头部至肩颈，头顶、下巴、耳朵均完整，不出现背面或全身视图。'
-        '保持同一身份、年龄、脸型、骨相、五官比例、肤色、发际线、发型及识别性细节，左右侧面符合真实结构。'
-        '三个头部大小一致、眼睛基线对齐、中性表情、视线随朝向自然变化，面部不被头发遮挡。'
-        '保持参考图画风、纯净浅灰背景、均匀柔光，无美颜改脸、夸张透视、文字、标签、水印或额外人物。',), (3456, 1152)),
-    'product-three-view': ImagePreset('产品三视图', (
-        '以参考图中的产品为唯一设计依据，生成同一产品的工业设计三视图参考板。'
-        '横版画面分为三个等宽区域，从左至右严格排列：正视图、右侧90度侧视图、后视图。'
-        '采用近正交投影、无广角畸变，同一比例尺、同一高度与底部基线，完整展示产品外轮廓，不裁切、不重叠。'
-        '三个视图保持结构、尺寸关系、材质、颜色、表面纹理、接口、按钮、接缝及标识一致，细节在视角之间符合物理对应关系。'
-        '不可见部位依据已知结构作合理且一致的补全，不增加功能件或改变产品设计。'
-        '产品独立展示，纯白背景、均匀棚拍光，无人物、手、包装道具、剧情场景、说明文字、尺寸标注、水印或额外视图；保留原有品牌标识。',)),
-    'storyboard': ImagePreset('连续分镜图', ('把镜头拉远成远景建立镜头，完整交代周围环境，主体在画面中较小',
-                           '改为中景镜头，主体占画面一半高度，动作清晰',
-                           '改为近景镜头，镜头推近到主体胸口以上，突出表情',
-                            '改为特写镜头，只拍主体面部或关键细节，背景虚化')),
-    'multi-camera': ImagePreset('多机位', ('把机位移到主体正前方，平视拍摄',
-                               '把机位向左绕到主体左前方约45度，从左侧斜角拍摄，透视随之改变',
-                               '把机位向右绕到主体右前方约45度，从右侧斜角拍摄，透视随之改变',
-                                '把机位升高到主体上方，高角度俯拍')),
-}
-
 async def image_presets(ctx: ToolContext):
     image = _source_image(ctx)
-    preset = PRESETS[ctx.choice('preset', PRESETS)]
-    title, prompts = preset.title, preset.prompts
+    key = ctx.choice('preset', PRESETS)
+    preset = PRESETS[key]
+    title = preset.title
+    prompts = preset_instructions(key, ctx.parameters.get('faceEmphasis') is True)
     outputs = []
     for index, instruction in enumerate(prompts, 1):
         await ctx.progress(f'正在生成{title}（{index}/{len(prompts)}）')
@@ -242,9 +209,10 @@ async def product_replacement(ctx: ToolContext):
     placed = scene.copy()
     placed.paste(layer, (x, y), layer)
     await ctx.progress('正在融合商品与场景')
-    drawn = await ctx.edit(placed, _with(ctx.text('prompt'), '商品自然融入场景，光影、透视和色调一致，保留商品外观和文字'), 0.42)
     region = Image.new('L', scene.size, 0)
     region.paste(255, (x, y, x + width, y + height))
+    drawn = await ctx.edit(placed, _with(ctx.text('prompt'), '商品自然融入场景，光影、透视和色调一致，保留商品外观和文字'), 0.42,
+                           mask=region)
     result = media.blend(scene, drawn, media.feather(region, max(4, min(width, height) / 12)))
     edge = {'4K': 4096, '2K': 2048}.get(ctx.parameters.get('resolution'))
     if edge and max(result.size) < edge:

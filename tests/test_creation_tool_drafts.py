@@ -21,6 +21,9 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from test_creation_canvas_service import project, send, ver
 
 
+pytestmark = pytest.mark.cpu
+
+
 def png(color='blue', size=(64, 48)):
     out = BytesIO()
     Image.new('RGBA', size, color).save(out, 'PNG')

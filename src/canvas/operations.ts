@@ -51,6 +51,7 @@ export function groupSelection(
       selected.has(node.id) &&
       !isNodeLocked(node, byId) &&
       node.type !== "stack" &&
+      !node.autoLayout &&
       !stackedIds.has(node.id),
   );
   const eligibleIds = new Set(eligible.map((node) => node.id));
@@ -170,6 +171,89 @@ export function ungroupSelection(
   };
 }
 
+export type GroupLayout = "grid" | "row" | "column";
+
+/** Padding a group keeps around its members; matches {@link groupSelection}. */
+const GROUP_PADDING = { left: 24, top: 40, right: 24, bottom: 24 };
+const GROUP_LAYOUT_GAP = 40;
+
+/**
+ * Arranges a group's direct members in a row, a column or a near-square grid,
+ * in their current reading order, and resizes the group to fit them. Member
+ * positions are relative to the group, which keeps its top-left corner.
+ */
+export function layoutGroup(
+  document: CanvasDocument,
+  groupId: string,
+  layout: GroupLayout,
+): CanvasDocument {
+  const group = document.nodes.find(
+    (node) => node.id === groupId && node.type === "group",
+  );
+  if (!group) return document;
+  const members = document.nodes
+    .filter((node) => node.parentId === groupId)
+    .sort((a, b) =>
+      layout === "row"
+        ? a.position.x - b.position.x || a.position.y - b.position.y
+        : a.position.y - b.position.y || a.position.x - b.position.x,
+    );
+  if (!members.length) return document;
+  const columns =
+    layout === "row"
+      ? members.length
+      : layout === "column"
+        ? 1
+        : Math.ceil(Math.sqrt(members.length));
+  const positions = new Map<string, Point>();
+  let x = GROUP_PADDING.left,
+    y = GROUP_PADDING.top,
+    rowHeight = 0,
+    right = 0,
+    bottom = 0;
+  members.forEach((node, index) => {
+    if (index && index % columns === 0) {
+      x = GROUP_PADDING.left;
+      y += rowHeight + GROUP_LAYOUT_GAP;
+      rowHeight = 0;
+    }
+    positions.set(node.id, { x, y });
+    right = Math.max(right, x + node.width);
+    bottom = Math.max(bottom, y + node.height);
+    x += node.width + GROUP_LAYOUT_GAP;
+    rowHeight = Math.max(rowHeight, node.height);
+  });
+  return {
+    ...document,
+    nodes: document.nodes.map((node) =>
+      node.id === groupId
+        ? {
+            ...node,
+            width: right + GROUP_PADDING.right,
+            height: bottom + GROUP_PADDING.bottom,
+          }
+        : positions.has(node.id)
+          ? { ...node, position: positions.get(node.id)! }
+          : node,
+    ),
+  };
+}
+
+/** Members of a group at any depth, excluding the group itself. */
+export function groupDescendants(
+  nodes: readonly CanvasNode[],
+  groupId: string,
+): CanvasNode[] {
+  const inside = new Set([groupId]);
+  const result: CanvasNode[] = [];
+  for (const node of orderNodesForCanvas(nodes))
+    if (node.parentId && inside.has(node.parentId)) {
+      inside.add(node.id);
+      result.push(node);
+    }
+  return result;
+}
+
 /** Copies selected groups with all descendants and edges internal to the copy. */
 export function copySelection(
   document: CanvasDocument,
@@ -270,10 +354,25 @@ export function pasteFragment(
   document: CanvasDocument,
   fragment: CanvasFragment,
   offset: Point = { x: 40, y: 40 },
+  mode: "paste" | "duplicate" = "paste",
 ): { document: CanvasDocument; ids: string[] } {
   if (!Number.isFinite(offset.x) || !Number.isFinite(offset.y))
     throw new Error(tNow("errors.operations.pasteOffset"));
   const byId = indexNodes(fragment.nodes);
+  const boundaryEdges = mode === "duplicate"
+    ? document.edges.filter((edge) =>
+        edge.intent !== "post_edit_result" &&
+        edge.referenceBinding !== "pinned" &&
+        byId.has(edge.source) !== byId.has(edge.target))
+    : [];
+  const incomingBoundaryIds = new Set(boundaryEdges.map((edge) => edge.id));
+  const incomingSourceIds = new Map<string, Set<string>>();
+  for (const edge of boundaryEdges) {
+    if (!byId.has(edge.target) || edge.intent === "assembly_input") continue;
+    const sources = incomingSourceIds.get(edge.target) ?? new Set<string>();
+    sources.add(edge.source);
+    incomingSourceIds.set(edge.target, sources);
+  }
   for (const node of fragment.nodes) ancestors(node, byId);
   for (const node of fragment.nodes)
     if (node.data.stack?.nodeIds.some((id) => !byId.has(id)))
@@ -307,7 +406,7 @@ export function pasteFragment(
     copy.data.title = derivedNodeTitle(node.data.title, titles);
     if (copy.type === "image") copy.data.copiedSourceId = node.id;
     copy.data = remapDataReferences(copy.data, remapped);
-    if (copy.data.promptContent && copy.data.settings && node.data.settings) {
+    if (copy.data.settings && node.data.settings) {
       for (const field of ["firstFrameNodeId", "lastFrameNodeId"] as const) {
         const original = node.data.settings[field];
         if (
@@ -316,9 +415,10 @@ export function pasteFragment(
           [...document.nodes, ...(document.hiddenNodes ?? [])].some(
             (source) => source.id === original,
           ) &&
-          copy.data.promptContent.some(
-            (part) => part.type === "reference" && part.nodeId === original,
-          )
+          (incomingSourceIds.get(node.id)?.has(original) ||
+            copy.data.promptContent?.some(
+              (part) => part.type === "reference" && part.nodeId === original,
+            ))
         )
           copy.data.settings = { ...copy.data.settings, [field]: original };
       }
@@ -346,10 +446,15 @@ export function pasteFragment(
     return copy;
   });
   let ordered = orderNodesForCanvas(nodes);
-  const edges = fragment.edges.map((edge) => ({
+  const incomingEdges = mode === "duplicate"
+    ? document.edges.filter((edge) =>
+        edgeIds.has(edge.id) ||
+        (byId.has(edge.target) && incomingBoundaryIds.has(edge.id)))
+    : fragment.edges;
+  const edges = incomingEdges.map((edge) => ({
     ...structuredClone(edge),
     id: newId(),
-    source: remapped.get(edge.source)!,
+    source: remapped.get(edge.source) ?? edge.source,
     target: remapped.get(edge.target)!,
   }));
   const knownSources = new Set(
@@ -397,14 +502,20 @@ export function pasteFragment(
       data: { ...node.data, ...generationContentPatch(content) },
     };
   });
-  return {
-    document: {
-      ...document,
-      nodes: [...document.nodes, ...ordered],
-      edges: [...document.edges, ...edges],
-    },
-    ids: ordered.map((node) => node.id),
+  let next = {
+    ...document,
+    nodes: [...document.nodes, ...ordered],
+    edges: [...document.edges, ...edges],
   };
+  for (const edge of boundaryEdges) {
+    const source = remapped.get(edge.source);
+    if (source)
+      next = applyCommand(next, {
+        type: "add-edge",
+        edge: { ...edge, id: newId(), source },
+      });
+  }
+  return { document: next, ids: ordered.map((node) => node.id) };
 }
 
 /** Rewrites node identities only; retained media resource IDs and sources are not node identities. */

@@ -18,6 +18,9 @@ from opendirector.infrastructure.local_projects import LocalProjects, child
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.model_adapters import OpenAIImages, adapter_for, capabilities_of
 
+
+pytestmark = pytest.mark.cpu
+
 ZIMAGE = ('image', 'http://gpu:8210/v1', 'Tongyi-MAI/Z-Image-Turbo')
 H3 = ('video', 'http://gpu:8010/v1', 'MiniMaxAI/MiniMax-H3')
 TTS = ('audio', 'http://gpu:8220/v1', 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice')
@@ -139,7 +142,9 @@ def test_catalog_reports_availability_by_capability(project):
     assert {'image.edit', 'video.first_frame', 'audio.speech', 'text.chat'} <= set(configured['capabilities'])
     assert any(field['key'] == 'preset' and field['options'] for field in tools['image-presets']['fields'])
     preset_field = next(field for field in tools['image-presets']['fields'] if field['key'] == 'preset')
-    assert [option['label'] for option in preset_field['options']] == ['人物三视图', '面部三视图', '产品三视图', '连续分镜图', '多机位']
+    assert [option['label'] for option in preset_field['options']] == ['人物三视图', '人物四视图', '面部三视图', '产品三视图', '连续分镜图', '多机位']
+    emphasis = next(field for field in tools['image-presets']['fields'] if field['key'] == 'faceEmphasis')
+    assert emphasis['type'] == 'boolean' and emphasis['required'] is False
 
 
 def test_outpaint_keeps_original_pixels_and_returns_requested_size(project):
@@ -152,6 +157,8 @@ def test_outpaint_keeps_original_pixels_and_returns_requested_size(project):
                 'parameters': {'left': 0.5, 'right': 0.5, 'top': 0, 'bottom': 0, 'outputWidth': 128, 'outputHeight': 48, 'prompt': '海边'}})
     assert task['status'] == 'succeeded', task['error']
     assert b'name="strength"' in calls[0] and '海边'.encode() in calls[0]
+    # Edits keep the service defaults: strength picks where on the step schedule the edit starts.
+    assert b'name="num_inference_steps"' not in calls[0] and b'name="guidance_scale"' not in calls[0]
     image = output_image(store, project_id, task)
     assert image.size == (128, 48)
     assert image.getpixel((64, 24))[2] > 200 and image.getpixel((2, 24))[0] > 200  # original centre, drawn border
@@ -279,6 +286,7 @@ def test_presets_return_one_output_per_shot_and_local_hd_needs_no_model(project)
 
 @pytest.mark.parametrize('preset,count,size', [
     ('three-view', 1, (2048, 1152)),
+    ('four-view', 1, (3456, 1152)),
     ('face-three-view', 1, (3456, 1152)),
     ('product-three-view', 1, (2048, 1152)),
     ('storyboard', 4, (2048, 1152)),
@@ -309,6 +317,27 @@ def test_image_presets_reframe_portrait_reference_and_register_each_result(proje
         assert '朝向相反、左右镜像对称'.encode() in calls[0]
     elif preset == 'product-three-view':
         assert '近正交投影'.encode() in calls[0]
+    elif preset == 'four-view':
+        assert '正面全身、右侧90度全身、背面全身、正脸特写'.encode() in calls[0]
+        assert '下巴以上完全在画框外'.encode() not in calls[0]
+
+
+@pytest.mark.parametrize('preset,crops_front_and_side', [('four-view', True), ('three-view', False)])
+def test_face_emphasis_only_affects_the_four_view_preset(project, preset, crops_front_and_side):
+    store, project_id, session = project
+    configs = configure(store, ZIMAGE)
+    source = upload(store, project_id, session, 'portrait.png', png((64, 96)))
+    calls = []
+    task = run(store, configs, httpx.MockTransport(images_server(calls)), project_id, session,
+               {'tool': 'image-presets', 'sourceAssetIds': [source],
+                'parameters': {'preset': preset, 'faceEmphasis': True}})
+    assert task['status'] == 'succeeded', task.get('error')
+    assert len(task['outputs']) == len(calls) == 1
+    assert ('眼睛、鼻子和嘴留在画外'.encode() in calls[0]) == crops_front_and_side
+    if crops_front_and_side:
+        assert '第3格：从头顶到鞋底的背面全身'.encode() in calls[0]
+        assert '第4格：唯一可见五官的正脸头肩特写'.encode() in calls[0]
+        assert '保持上传参考图的原始成像方式与画风'.encode() in calls[0]
 
 
 def test_submission_rejects_tools_without_a_capable_model(project):
@@ -405,6 +434,7 @@ def test_h3_edit_masks_follow_its_frame_and_audio_grids():
     assert VllmOmniVideo.picture_mask(None, frames) == 0.0 and VllmOmniVideo.picture_mask(EditMask(0.7), frames) == 0.7
 
 
+@pytest.mark.merge
 def test_partial_reshoot_redraws_only_its_window(project):
     store, project_id, session = project
     configs = configure(store, H3)
@@ -419,6 +449,7 @@ def test_partial_reshoot_redraws_only_its_window(project):
     assert picture[0] == [[0.0]] and any(frame == [[1.0]] for frame in picture) and 0 < sum(sound) < len(sound)
 
 
+@pytest.mark.merge
 def test_long_video_edit_runs_piecewise_and_subtitles_default_to_the_bottom_band(project):
     store, project_id, session = project
     configs = configure(store, H3)
@@ -433,6 +464,12 @@ def test_long_video_edit_runs_piecewise_and_subtitles_default_to_the_bottom_band
     assert task['status'] == 'succeeded', task['error']
     region = mask_part(bodies[0], 'video_noise_mask')
     assert len(bodies) == 2 and region[0][0] == 0.0 and region[0][-1] == 1.0 and mask_part(bodies[0], 'audio_noise_mask') == 0.0
+    assert len(task['videoExecution']['requests']) == len(task['videoExecution']['pieces']) == 2
+    for body, checked in zip(bodies, task['videoExecution']['requests'], strict=True):
+        assert mask_part(body, 'fps') == checked['fps']
+        assert mask_part(body, 'num_frames') == checked['num_frames']
+        assert mask_part_raw(body, 'size').decode() == checked['size']
+        assert mask_part(body, 'extra_params')['task'] == checked['task']
     assert abs(task['outputs'][0]['durationMs'] - 20000) < 500
     bodies.clear()
     clip = upload(store, project_id, session, 'clip.mp4', sound_mp4(5))
@@ -503,7 +540,7 @@ def test_qwen_image_edits_with_condition_images_on_its_grid_without_strength():
     calls = []
     adapter.transport = httpx.MockTransport(images_server(calls))
     result = asyncio.run(adapter.image(config, ImageRequest(prompt='换成黄色雨衣', width=1000, height=600, image=png(), strength=0.7,
-                                                            references=(png(color='red'),) * 5)))
+                                                            references=(png(color='red'),) * 3)))
     body = calls[0]
     assert result.suffix == 'png' and body.count(b'name="image"') == 4 and b'name="strength"' not in body
     assert b'name="size"\r\n\r\n992x608' in body
@@ -986,3 +1023,70 @@ def test_video_edit_rejects_out_of_bounds_selection_before_acceptance(project, b
             sourceAssetIds=[source], parameters={'prompt': 'change'}, boxes=[box]), session))
     assert service.list(project_id) == [] and not service.jobs
     assert store.snapshot(project_id) == before
+
+
+def video_frame(store, project_id, task, tmp_path, seconds=0.5):
+    path = tmp_path / f"frame-{task['id']}.mp4"
+    path.write_bytes(CreationToolAssets(store).read_bytes(project_id, task['outputs'][0]['id']))
+    data = subprocess.run(['ffmpeg', '-v', 'error', '-ss', str(seconds), '-i', str(path), '-frames:v', '1', '-f', 'image2',
+                           '-c:v', 'png', 'pipe:1'], capture_output=True, check=True).stdout
+    return Image.open(io.BytesIO(data)).convert('RGB')
+
+
+def gray_mp4(seconds=1, size='64x36', color='0x808080'):
+    return subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', f'color=c={color}:size={size}:rate=24', '-t', str(seconds),
+                           '-pix_fmt', 'yuv420p', '-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'],
+                          capture_output=True, check=True).stdout
+
+
+def test_video_matting_mask_is_white_on_black_for_later_steps(project, tmp_path):
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'clip.mp4', sound_mp4(1))
+    task = run(store, configure(store, SAM3), httpx.MockTransport(tracking_server([])), project_id, session,
+               {'tool': 'video-matting', 'sourceAssetIds': [source], 'parameters': {'background': 'mask'}})
+    assert task['status'] == 'succeeded', task['error']
+    assert task['outputs'][0]['title'] == '视频遮罩' and task['outputs'][0]['type'] == 'video/mp4'
+    frame = video_frame(store, project_id, task, tmp_path)
+    assert min(frame.getpixel((10, 18))) > 230 and max(frame.getpixel((54, 18))) < 25  # Tracked left half white.
+
+
+def test_mask_composite_keeps_content_inside_the_mask_and_stretches_it(project, tmp_path):
+    store, project_id, session = project
+    depth = upload(store, project_id, session, 'depth.mp4', gray_mp4(1))
+    # Mask: the left half white.
+    mask_video = subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=black:size=64x36:rate=24', '-t', '1',
+                                 '-vf', 'drawbox=x=0:y=0:w=32:h=36:color=white:t=fill', '-pix_fmt', 'yuv420p', '-f', 'mp4',
+                                 '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'], capture_output=True, check=True).stdout
+    mask = upload(store, project_id, session, 'mask.mp4', mask_video)
+    configs = configure(store)
+    task = run(store, configs, None, project_id, session,
+               {'tool': 'video-mask-composite', 'sourceAssetIds': [depth, mask], 'parameters': {'stretch': False}})
+    assert task['status'] == 'succeeded', task['error']
+    assert task['modelConfigIds'] == {} and task['outputs'][0]['title'] == '遮罩合成'
+    frame = video_frame(store, project_id, task, tmp_path)
+    assert 110 < frame.getpixel((8, 18))[0] < 150 and max(frame.getpixel((56, 18))) < 20
+    task = run(store, configs, None, project_id, session,
+               {'tool': 'video-mask-composite', 'sourceAssetIds': [depth, mask], 'parameters': {'stretch': True}})
+    assert task['status'] == 'succeeded', task['error']
+    # A flat gray person is stretched to the bottom of the 50..255 control range, still distinct from black.
+    frame = video_frame(store, project_id, task, tmp_path)
+    assert 35 < frame.getpixel((8, 18))[0] < 70 and max(frame.getpixel((56, 18))) < 20
+    task = run(store, configs, None, project_id, session,
+               {'tool': 'video-mask-composite', 'sourceAssetIds': [depth], 'parameters': {}})
+    assert task['status'] == 'failed' and '两个视频' in task['error']
+
+
+def test_mask_composite_rejects_a_mask_on_another_timeline(project):
+    store, project_id, session = project
+    depth = upload(store, project_id, session, 'depth.mp4', gray_mp4(1))
+    configs = configure(store)
+    # Frames are paired by index: another frame rate or length would drift the mask off the person.
+    other_rate = subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=white:size=64x36:rate=30', '-t', '1',
+                                 '-pix_fmt', 'yuv420p', '-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'],
+                                capture_output=True, check=True).stdout
+    shorter = gray_mp4(0.5, color='white')
+    for name, video, reason in (('rate.mp4', other_rate, '帧率'), ('short.mp4', shorter, '帧数')):
+        mask = upload(store, project_id, session, name, video)
+        task = run(store, configs, None, project_id, session,
+                   {'tool': 'video-mask-composite', 'sourceAssetIds': [depth, mask], 'parameters': {}})
+        assert task['status'] == 'failed' and reason in task['error'], task['error']

@@ -17,6 +17,8 @@ import type { CanvasToolTask } from "./toolCatalog.ts";
 
 export interface GenerationJob {
   id: string;
+  /** Authoritative execution revision, when supplied by the service ledger. */
+  revision?: number;
   nodeId: string;
   title: string;
   status:
@@ -32,6 +34,7 @@ export interface GenerationJob {
   finishedAt?: number;
   durationKey?: string;
   outputKind?: "text" | "image" | "video" | "audio";
+  videoDuration?: { requestedSeconds?: number; resultSeconds?: number };
   activityPhase?: import("./generationActivity.ts").GenerationPhase;
   message?: string;
   /** Service-reported reason for a failed or interrupted execution. */
@@ -59,6 +62,11 @@ export interface GenerationJob {
     settings: GenerationSettings;
   };
   outputs?: ServiceResult[];
+  /**
+   * A succeeded generation's result asset once the service has made it the
+   * origin node's current content; the canvas may still be loading it.
+   */
+  deliveredAssetId?: string;
   /** Rebuildable unified history preview; independent of execution status. */
   preview?: { assetId: string; state: "pending" | "ready" | "unavailable" };
   /** The AI tool request behind a tool task, so a reopened canvas can follow it. */
@@ -90,7 +98,10 @@ export function toolProvenanceEdges(
   const projected = new Set<string>();
   const edges: CanvasEdge[] = [];
   for (const job of jobs) {
-    if (!(job.toolTask || job.tool) || !visible.has(job.nodeId)) continue;
+    if (!(job.toolTask || job.tool)) continue;
+    const maskId = job.tool?.tool === "video-mask-composite"
+      ? job.tool.sourceNodeIds[1]
+      : undefined;
     const targets = job.status === "succeeded" ? (job.toolTask?.outputIds ?? []) : [];
     const target = job.targetNodeId && visible.get(job.targetNodeId);
     if (
@@ -102,18 +113,28 @@ export function toolProvenanceEdges(
     )
       targets.push(target.id);
     for (const id of targets) {
+      const output = visible.get(id);
+      if (!output) continue;
       if (
-        !visible.has(id) ||
-        projected.has(id) ||
-        document.edges.some((edge) => edge.source === job.nodeId && edge.target === id)
+        maskId &&
+        job.status === "succeeded" &&
+        !job.outputs?.some((media) => media.kind !== "text" && media.src === output.data.src)
       ) continue;
-      projected.add(id);
-      edges.push({
-        id: `tool-${id}`,
-        source: job.nodeId,
-        target: id,
-        intent: "post_edit_result",
-      });
+      for (const source of maskId ? [job.nodeId, maskId] : [job.nodeId]) {
+        const edgeId = source === job.nodeId ? `tool-${id}` : `tool-${id}:${source}`;
+        if (
+          !visible.has(source) ||
+          projected.has(edgeId) ||
+          document.edges.some((edge) => edge.source === source && edge.target === id)
+        ) continue;
+        projected.add(edgeId);
+        edges.push({
+          id: edgeId,
+          source,
+          target: id,
+          intent: "post_edit_result",
+        });
+      }
     }
   }
   return edges;

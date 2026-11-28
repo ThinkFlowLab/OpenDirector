@@ -14,6 +14,9 @@ from opendirector.domain.rule_facts import (
 )
 
 
+pytestmark = pytest.mark.cpu
+
+
 def test_timeline_contract_limits_are_published_as_shared_facts():
     from opendirector.domain.creation.editors import TimelineData, TimelineTextOverlay
     facts = facts_payload()
@@ -57,6 +60,11 @@ def test_menu_derivations_follow_published_rules_then_the_catalog():
     rows = {row['name']: row['expected'] for row in derivation_vectors()}
     catalog = ['auto', *VIDEO_ASPECT_RATIOS]
     assert rows == {
+        'magi2-image-ratios': ['auto', '16:9', '9:16'],
+        'magi2-audio-bytes': 15 * 1024 * 1024,
+        'magi2-media-prompt-optional': True,
+        'magi2-text-prompt-required': False,
+        'other-model-prompt-required': False,
         'image-ratios-drop-auto-and-duplicates': ['auto', '16:9', '1:1'],
         'video-published-first-last-is-auto-only': ['auto'],
         'video-published-ratios-keep-order': ['auto', '9:16', '9:16'],
@@ -78,6 +86,7 @@ def test_menu_derivations_follow_published_rules_then_the_catalog():
         'missing-capabilities-keep-labels': ['auto', '720P'],
         'empty-capabilities-drop-labels': ['auto'],
         'continuation-mode': 'continuation',
+        'control-mode': 'control',
         'first-last-mode': 'first_frame',
         'stored-first-frame-mode': 'first_frame',
         'reference-without-first-frame-support': 'reference',
@@ -133,3 +142,30 @@ def test_first_frame_image_cap_uses_the_shared_limit():
         validate_generation(spec, public, tuple(image_ref(number) for number in range(FRAME_IMAGE_LIMIT + 1)))
     with pytest.raises(ValueError, match='参考素材数量超过上限'):
         validate_generation(spec, public, tuple(image_ref(number) for number in range(MAX_REFERENCES + 1)))
+
+
+def test_fractional_duration_is_published_only_for_vllm_omni_h3_profiles():
+    from opendirector.domain.input_rules import input_rules
+    from opendirector.domain.video_capabilities import validate_video_duration
+    from opendirector.domain.projects import ProjectError
+
+    config = dict(kind='video', url='http://model.test/v1', modelId='MiniMaxAI/MiniMax-H3', protocol='vllm_omni')
+    assert input_rules(config)['fractionalDuration'] is True
+    validate_video_duration(config, 6.583333, '480P')
+    for model_id, adapter in [('FastH3-Omni', 'fasth3'), ('H3.1-Turbo-custom', 'minimax_h3')]:
+        other = {**config, 'modelId': model_id, 'videoAdapter': adapter, 'videoCapabilities': {
+            'outputs': [{'resolution': '480P', 'width': 832, 'height': 480, 'durations': [4, 8]}],
+            'defaultResolution': '480P', 'defaultDuration': 4, 'dimensionStep': 16}}
+        assert input_rules(other)['fractionalDuration'] is True
+        validate_video_duration(other, 6.583333, '480P')
+    for capabilities in (None, {'outputs': [{'resolution': '480P', 'width': 832, 'height': 480, 'durations': [4, 8]}],
+                                'defaultResolution': '480P', 'defaultDuration': 4, 'dimensionStep': 16}):
+        generic = {**config, 'modelId': 'generic-video', 'videoCapabilities': capabilities}
+        assert not input_rules(generic).get('fractionalDuration', False)
+        validate_video_duration(generic, 8, '480P')
+        with pytest.raises(ProjectError):
+            validate_video_duration(generic, 6.583333, '480P')
+    official = dict(kind='video', url='https://api.minimax.cn/v2', modelId='MiniMax-H3', protocol='minimax_video_v2')
+    assert input_rules(official).get('fractionalDuration', False) is False
+    with pytest.raises(ProjectError):
+        validate_video_duration(official, 6.583333)

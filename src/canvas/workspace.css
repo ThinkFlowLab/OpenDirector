@@ -493,14 +493,18 @@
   text-align: left;
   border-radius: 9px;
 }
-.cw-project-option:hover,
-.cw-project-row:has(.cw-project-more:focus-visible) .cw-project-option {
+.cw-project-row[data-new-tab="true"] .cw-project-option {
+  padding-right: 66px;
+}
+.cw-project-row:hover .cw-project-option,
+.cw-project-row:has(:is(.cw-project-more, .cw-project-open-tab):focus-visible) .cw-project-option {
   background: #ffffff09;
 }
 .cw-project-option[aria-checked="true"] {
   background: #ffffff0d;
 }
-.cw-project-more {
+.cw-project-more,
+.cw-project-open-tab {
   position: absolute;
   top: 50%;
   right: 5px;
@@ -516,13 +520,17 @@
   pointer-events: none;
   transition: opacity 120ms ease;
 }
-.cw-project-row:hover .cw-project-more,
-.cw-project-row:focus-within .cw-project-more,
+.cw-project-row[data-new-tab="true"] .cw-project-more {
+  right: 33px;
+}
+.cw-project-row:hover :is(.cw-project-more, .cw-project-open-tab),
+.cw-project-row:focus-within :is(.cw-project-more, .cw-project-open-tab),
 .cw-project-more[aria-expanded="true"] {
   opacity: 1;
   pointer-events: auto;
 }
-.cw-project-more:hover {
+.cw-project-more:hover,
+.cw-project-open-tab:hover {
   background: #ffffff14;
   color: #fff;
 }
@@ -611,6 +619,7 @@
   flex-shrink: 0;
 }
 .cw-project-create,
+.cw-project-examples,
 .cw-project-cleanup {
   display: flex;
   align-items: center;
@@ -623,6 +632,7 @@
   text-align: left;
 }
 .cw-project-create:hover,
+.cw-project-examples:hover,
 .cw-project-cleanup:hover {
   color: #fff;
 }
@@ -1222,6 +1232,30 @@
   padding: 10px 16px;
   font-size: 12px;
 }
+
+.cw-empty-example-status {
+  gap: 8px;
+  margin: 16px auto 0;
+  max-width: 320px;
+  font-size: 12px;
+  color: #9599a8;
+}
+
+.cw-empty-example-status .cw-example-progress {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* Specificity beats the shared .cw-empty small tagline rule. */
+.cw-empty small.cw-empty-example-error {
+  display: block;
+  margin: 12px auto 0;
+  max-width: 420px;
+  color: #e08a8a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .cw-empty button:hover {
   background: #2a2a2d;
 }
@@ -1758,6 +1792,12 @@
   color: #d0d9d1;
   pointer-events: auto;
   animation: cw-toast-enter 180ms ease-out;
+}
+/* A failed operation rather than a confirmation. */
+.cw-toast.is-error {
+  background: #43222a;
+  border-color: #ff667555;
+  color: #ffc9d1;
 }
 .cw-toast > span {
   overflow-wrap: anywhere;

@@ -1,5 +1,11 @@
 /** Assistant panel, reply activity, pickers, references and chat transport. */
 export const assistant = {
+  "assistant.reply.sourceUnavailable": "来源不可用",
+  "assistant.reply.copyLink": "复制链接",
+  "assistant.reply.copyLinkFailed": "复制失败，请选择链接地址复制",
+  "assistant.reply.openLink": "打开链接",
+  "assistant.reply.openExternalLink": "打开外部链接",
+  "assistant.reply.externalLinkWarning": "即将访问以下外部网站，请确认链接地址。",
   // Right-side assistant panel.
   "assistant.panel.aria": "AI 对话",
   "assistant.panel.title": "AI 对话",
@@ -108,6 +114,8 @@ export const assistant = {
   "assistant.reply.plan": "执行计划",
   "assistant.reply.empty": "本次回复未生成内容。",
   "assistant.reply.copy": "复制",
+  "assistant.reply.suggestions": "建议回复",
+  "assistant.reply.useSuggestion": "用这条建议填写草稿",
   "assistant.reply.copyReply": "复制回复",
   "assistant.reply.copied": "已复制",
   "assistant.reply.copyFailed": "复制失败，请选择正文复制",

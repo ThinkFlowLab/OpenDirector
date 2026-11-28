@@ -2,7 +2,10 @@ import type { Rect, Viewport } from "./model.ts";
 
 export type ScreenSize = { width: number; height: number };
 export type SelectionChrome = {
+  /** Available area in workspace coordinates. */
   safe: Rect;
+  /** Canvas origin relative to the workspace that hosts the overlays. */
+  canvasOrigin?: { x: number; y: number };
   toolbar: ScreenSize;
   composer: ScreenSize;
   /** Composer dimensions are canvas units when enabled; toolbar stays screen-sized. */
@@ -16,12 +19,26 @@ const COMPOSER_GAP = 16;
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
+/** Project canvas bounds into the workspace that hosts the selection overlays. */
+export function projectSelectionRect(
+  bounds: Rect,
+  view: Viewport,
+  origin?: SelectionChrome["canvasOrigin"],
+): Rect {
+  return {
+    x: bounds.x * view.zoom + view.x + (origin?.x ?? 0),
+    y: bounds.y * view.zoom + view.y + (origin?.y ?? 0),
+    width: bounds.width * view.zoom,
+    height: bounds.height * view.zoom,
+  };
+}
+
 /** Center content in the usable canvas, preserving zoom unless it cannot fit. */
 export function centeredViewport(node: Rect, viewport: Viewport, chrome: SelectionChrome): Viewport {
   return selectionViewport(node, {
     ...viewport,
-    x: chrome.safe.x + chrome.safe.width / 2 - (node.x + node.width / 2) * viewport.zoom,
-    y: chrome.safe.y + chrome.safe.height / 2 - (node.y + node.height / 2) * viewport.zoom,
+    x: chrome.safe.x + chrome.safe.width / 2 - (node.x + node.width / 2) * viewport.zoom - (chrome.canvasOrigin?.x ?? 0),
+    y: chrome.safe.y + chrome.safe.height / 2 - (node.y + node.height / 2) * viewport.zoom - (chrome.canvasOrigin?.y ?? 0),
   }, chrome);
 }
 
@@ -53,21 +70,23 @@ export function selectionViewport(
   );
   // Zoom around the selected content, not the world origin, so a distant node
   // does not slide sideways simply because its controls need more vertical space.
-  const screenCenter = (node.x + node.width / 2) * viewport.zoom + viewport.x;
+  const projected = projectSelectionRect(node, viewport, chrome.canvasOrigin);
+  const screenCenter = projected.x + projected.width / 2;
   const center = clamp(
     screenCenter,
     safe.x + width / 2,
     safe.x + safe.width - width / 2,
   );
   const top = clamp(
-    node.y * viewport.zoom + viewport.y,
+    projected.y,
     safe.y + above,
     safe.y + safe.height - below * composerScale - node.height * zoom,
   );
   return {
     zoom,
-    x: center - (node.x + node.width / 2) * zoom,
-    y: top - node.y * zoom,
+    // React Flow expects its translation relative to its own container.
+    x: center - (node.x + node.width / 2) * zoom - (chrome.canvasOrigin?.x ?? 0),
+    y: top - node.y * zoom - (chrome.canvasOrigin?.y ?? 0),
   };
 }
 
@@ -120,9 +139,10 @@ export function selectionPlacement(
 ) {
   const { safe, toolbar, composer, scaleComposer } = chrome;
   const composerScale = scaleComposer ? view.zoom : 1;
-  const center = (node.x + node.width / 2) * view.zoom + view.x;
-  const top = node.y * view.zoom + view.y;
-  const bottom = top + node.height * view.zoom;
+  const projected = projectSelectionRect(node, view, chrome.canvasOrigin);
+  const center = projected.x + projected.width / 2;
+  const top = projected.y;
+  const bottom = top + projected.height;
   const left = (width: number) =>
     clamp(center - width / 2, safe.x, safe.x + safe.width - width);
   return {
@@ -139,7 +159,7 @@ export function selectionPlacement(
     visible:
       bottom > safe.y &&
       top < safe.y + safe.height &&
-      center + (node.width * view.zoom) / 2 > safe.x &&
-      center - (node.width * view.zoom) / 2 < safe.x + safe.width,
+      projected.x + projected.width > safe.x &&
+      projected.x < safe.x + safe.width,
   };
 }

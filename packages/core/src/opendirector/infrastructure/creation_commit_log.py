@@ -4,6 +4,7 @@ Opening a project serves the head commit. Ancestry is proved by history reads
 and by a bounded background warm, never by trusting a bare timestamp.
 """
 import threading
+from contextlib import contextmanager
 from hashlib import sha256
 
 from opendirector.domain.projects import ProjectError
@@ -310,6 +311,27 @@ class CommitLog:
             self._recover()
             return self._find(db, project_id)
 
+    @contextmanager
+    def _write_basis(self, project_id):
+        while True:
+            path, manifest = self._read_manifest(project_id)
+            self._await_warm(project_id, manifest.head)
+            signature = _head_signature(path, manifest.head, self._verify_record_bytes)
+            try:
+                records = self._history(path, manifest)
+            except (OSError, ProjectError):
+                if (path, manifest) != self._read_manifest(project_id):
+                    continue
+                raise
+            with self.local.transaction() as db:
+                self._recover()
+                if (path, manifest) != self._find(db, project_id):
+                    continue
+                if signature is None or signature != _head_signature(path, manifest.head, self._verify_record_bytes):
+                    raise ProjectError('工程提交身份不一致，原文件已保留。', 409, code='storage_unavailable')
+                yield db, path, manifest, records
+                return
+
     def records(self, project_id):
         """Private commit records for read-only scans; callers must not mutate them.
 
@@ -318,7 +340,18 @@ class CommitLog:
         megabytes for long histories, so they read the shared records directly.
         """
         path, manifest = self._read_manifest(project_id)
-        return tuple(self._history(path, manifest))
+        return tuple(self._read_history(project_id, path, manifest))
+
+    def _read_history(self, project_id, path, manifest):
+        while True:
+            try:
+                return self._history(path, manifest)
+            except (OSError, ProjectError):
+                # The immutable files can move together when a project is renamed.
+                current = self._read_manifest(project_id)
+                if current == (path, manifest):
+                    raise
+                path, manifest = current
 
     def history(self, project_id):
         records = self.records(project_id)
@@ -328,8 +361,7 @@ class CommitLog:
 
     def history_index(self, project_id):
         """Small detached event metadata; toolbar queries need no snapshots."""
-        path, manifest = self._read_manifest(project_id)
-        records = self._history(path, manifest)
+        records = self.records(project_id)
         return records[0].snapshot.undoClearedThrough, tuple(dict(
             commandId=r.command.commandId, type=r.command.type,
             cursor=r.event.cursor, source=r.event.source,
@@ -337,13 +369,11 @@ class CommitLog:
         ) for r in records if r.event is not None)
 
     def receipt(self, project_id, command_id):
-        with self.local.transaction() as db:
-            self._recover()
-            records = self._load(db, project_id)[2]
-            found = next((record.receipt for record in records if str(record.command.commandId) == str(command_id)), None)
-            if found is None:
-                raise ProjectError('没有该命令的已提交回执。', 404)
-            return found.model_copy(deep=True)
+        records = self.records(project_id)
+        found = next((record.receipt for record in records if str(record.command.commandId) == str(command_id)), None)
+        if found is None:
+            raise ProjectError('没有该命令的已提交回执。', 404)
+        return found.model_copy(deep=True)
 
     def changes(self, project_id, *, after=0, limit=100):
         if type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 200:
@@ -362,15 +392,13 @@ class CommitLog:
             cursor = head.snapshot.eventCursor
             if after > cursor:
                 raise ProjectError('变更游标超出当前工程，请重新读取快照。', 409)
-            if after == cursor:
-                if not validated:
-                    # A head served by the fast path has not proven its ancestry
-                    # yet; the outbox is derived from the chain, so validate it
-                    # before claiming there are no events.
-                    self._history(path, manifest)
-                return dict(events=[], nextCursor=after, currentCursor=cursor, hasMore=False)
-            records = self._history(path, manifest)
-            events = [record.event for record in reversed(records) if record.event and record.event.cursor > after][:limit]
-            events = [event.model_copy(deep=True) for event in events]
-            return dict(events=events, nextCursor=events[-1].cursor if events else after,
-                        currentCursor=cursor, hasMore=bool(events and events[-1].cursor < cursor))
+        if after == cursor and validated:
+            return dict(events=[], nextCursor=after, currentCursor=cursor, hasMore=False)
+        records = self._read_history(project_id, path, manifest)
+        cursor = records[0].snapshot.eventCursor
+        if after > cursor:
+            raise ProjectError('变更游标超出当前工程，请重新读取快照。', 409)
+        events = [record.event for record in reversed(records) if record.event and record.event.cursor > after][:limit]
+        events = [event.model_copy(deep=True) for event in events]
+        return dict(events=events, nextCursor=events[-1].cursor if events else after,
+                    currentCursor=cursor, hasMore=bool(events and events[-1].cursor < cursor))

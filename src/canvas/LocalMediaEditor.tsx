@@ -9,6 +9,7 @@ import {
   mediaBlobDataUrl,
   recordLocalVideoRange,
 } from "./localMediaRuntime.ts";
+import { renderTrimmedMp4, type VideoTrimFormat } from "./videoActionRuntime.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
 import "./local-media-tools.css";
 import {
@@ -16,6 +17,9 @@ import {
   fitVideoCrop,
   type VideoCrop,
 } from "./videoCrop.ts";
+import { AssetMedia } from "./useAssetMedia.tsx";
+import { fetchMediaSource } from "../backend/creationClient.ts";
+import { parseAssetSource } from "../backend/assetSource.ts";
 
 export interface LocalMediaOutput {
   src: string;
@@ -25,6 +29,7 @@ export interface LocalMediaOutput {
   media?: CanvasNodeData["media"];
 }
 const localSource = (src: string) => {
+  if (parseAssetSource(src)) return true;
   if (/^data:(audio|video|image)\//.test(src)) return true;
   try {
     const url = new URL(src, location.href);
@@ -80,6 +85,7 @@ export function LocalMediaEditor({
     [error, setError] = useState("");
   const [crop, setCrop] = useState<VideoCrop | null>(null);
   const [cropRatio, setCropRatio] = useState("free");
+  const [outputFormat, setOutputFormat] = useState<VideoTrimFormat>("webm");
   const [probingDuration, setProbingDuration] = useState(false);
   const durationProbe = useRef<AbortController | null>(null);
   const probeAttempted = useRef(false);
@@ -96,6 +102,7 @@ export function LocalMediaEditor({
     abort = useRef<AbortController | null>(null),
     previewing = useRef(false);
   const isAudio = node.type === "audio" || mode === "extract-audio";
+  const videoTrimFormat = mode === "trim" && !isAudio ? outputFormat : undefined;
   useEffect(() => {
     active.current = true;
     const element = media.current;
@@ -107,6 +114,7 @@ export function LocalMediaEditor({
     probeAttempted.current = false;
     setCrop(null);
     setCropRatio("free");
+    setOutputFormat("webm");
     setDimensions({ width: 0, height: 0 });
     setDuration(node.data.media?.durationSeconds ?? 0);
     setEnd(node.data.media?.durationSeconds ?? 0);
@@ -292,6 +300,7 @@ export function LocalMediaEditor({
       start,
       end,
       crop,
+      outputFormat: videoTrimFormat,
       position: mode === "frame" ? position : undefined,
     });
     const commit = async (output: LocalMediaOutput) => {
@@ -311,7 +320,13 @@ export function LocalMediaEditor({
                       ? "audio-trim"
                       : "video-trim",
               [node.id],
-              { start, end, frameTime: element.currentTime, ...(crop ?? {}) },
+              {
+                start,
+                end,
+                frameTime: element.currentTime,
+                ...(crop ?? {}),
+                ...(videoTrimFormat ? { outputFormat: videoTrimFormat } : {}),
+              },
             ),
           )) === false
         )
@@ -344,7 +359,7 @@ export function LocalMediaEditor({
         return;
       }
       if (isAudio) {
-        const response = await fetch(node.data.src, {
+        const response = await fetchMediaSource(node.data.src, {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error(t("tools.localMedia.error.audioRead"));
@@ -380,16 +395,25 @@ export function LocalMediaEditor({
         return;
       }
       const video = element as HTMLVideoElement;
-      const blob = await recordLocalVideoRange(
-        video,
-        start,
-        end,
-        controller.signal,
-        (seconds) => {
-          if (owns(controller)) setPosition(seconds);
-        },
-        mode === "crop" ? { crop: crop! } : undefined,
-      );
+      const onPosition = (seconds: number) => {
+        if (owns(controller)) setPosition(seconds);
+      };
+      const blob =
+        videoTrimFormat === "mp4"
+          ? await renderTrimmedMp4(
+              node.data.src,
+              { start, end },
+              controller.signal,
+              onPosition,
+            )
+          : await recordLocalVideoRange(
+              video,
+              start,
+              end,
+              controller.signal,
+              onPosition,
+              mode === "crop" ? { crop: crop! } : undefined,
+            );
       const src = await mediaBlobDataUrl(blob, controller.signal);
       const measured = await withMediaDuration(
         {
@@ -397,13 +421,13 @@ export function LocalMediaEditor({
           kind: "video",
           title: node.data.title,
           src,
-          mimeType: "video/webm",
+          mimeType: blob.type,
         },
         controller.signal,
       );
       await commit({
         src,
-        mimeType: "video/webm",
+        mimeType: blob.type,
         kind: "video",
         title: `${node.data.title} · ${
           mode === "crop"
@@ -454,7 +478,9 @@ export function LocalMediaEditor({
             ? t("tools.localMedia.subtitle.frame")
             : isAudio
               ? t("tools.localMedia.subtitle.audio")
-              : t("tools.localMedia.subtitle.video")
+              : videoTrimFormat === "mp4"
+                ? t("tools.localMedia.subtitle.mp4")
+                : t("tools.localMedia.subtitle.video")
       }
       onClose={onClose}
       onApply={() => void apply()}
@@ -472,8 +498,9 @@ export function LocalMediaEditor({
     >
       <div className="cw-local-video-preview">
         {node.type === "audio" ? (
-          <audio
-            ref={(element) => {
+          <AssetMedia
+            as="audio"
+            ref={(element: HTMLAudioElement | null) => {
               media.current = element;
             }}
             src={node.data.src}
@@ -507,8 +534,9 @@ export function LocalMediaEditor({
                 : undefined
             }
           >
-            <video
-              ref={(element) => {
+            <AssetMedia
+              as="video"
+              ref={(element: HTMLVideoElement | null) => {
                 media.current = element;
               }}
               src={node.data.src}
@@ -660,6 +688,21 @@ export function LocalMediaEditor({
             duration: duration.toFixed(2),
           })}
         </span>
+        {videoTrimFormat && (
+          <label>
+            {t("tools.videoEditor.outputFormat")}
+            <select
+              value={videoTrimFormat}
+              disabled={busy}
+              onChange={(event) =>
+                setOutputFormat(event.target.value === "mp4" ? "mp4" : "webm")
+              }
+            >
+              <option value="webm">WebM</option>
+              <option value="mp4">MP4</option>
+            </select>
+          </label>
+        )}
         {mode === "frame" ? (
           <>
             <ControlSlider

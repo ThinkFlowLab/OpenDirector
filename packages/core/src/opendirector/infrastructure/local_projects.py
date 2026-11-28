@@ -72,6 +72,9 @@ def write_json(path: Path, value) -> None:
 class LocalProjects:
     """Coordination only; never reads, migrates or repairs old project data."""
     LEASE_SECONDS = 60
+    # A run blocks project moves and deletion like a browser lease. Its
+    # separate key lets browsers open or release their own editing session.
+    _AGENT_SESSION_PREFIX = "agent:"
 
     def __init__(self, repository: Path):
         self.repository = repository.resolve()
@@ -119,16 +122,55 @@ class LocalProjects:
                 raise ProjectError("该位置已有同名文件或文件夹，请使用其他名称。", 409)
 
 
-    def _open(self, db, project: dict, session: str):
+    def acquire_edit_lease(self, db: sqlite3.Connection, project: dict[str, str], session: str, *, persistent=False) -> None:
         identifier(session)
         project_id = project["id"]
-        if db.execute("SELECT 1 FROM sessions WHERE project_id=? AND id<>? AND expires>?", (project_id, session, time.time())).fetchone():
-            raise ProjectError("该项目正在其他窗口中打开，请先关闭后再试。", 409, code="storage_busy")
-        lease = db.execute("SELECT path FROM sessions WHERE id=? AND project_id=? AND expires>?", (session, project_id, time.time())).fetchone()
+        if db.execute("SELECT 1 FROM sessions WHERE project_id=? AND id<>? AND id NOT LIKE ? AND expires>?",
+                      (project_id, session, self._AGENT_SESSION_PREFIX + "%", time.time())).fetchone():
+            raise ProjectError("该项目正在其他窗口中打开，请先关闭后再试。", 409, code="project_open_elsewhere")
+        lease = db.execute("SELECT path, expires FROM sessions WHERE id=? AND project_id=? AND expires>?", (session, project_id, time.time())).fetchone()
         if lease and lease["path"] != project["path"]:
             raise ProjectError("项目目录已在应用外改名或移动，请复制未保存内容并刷新页面。", 409)
-        db.execute("INSERT INTO sessions(id,project_id,expires,path) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,expires=excluded.expires,path=excluded.path", (session, project_id, time.time() + self.LEASE_SECONDS, project["path"]))
+        expires = float("inf") if persistent or (lease and lease["expires"] == float("inf")) else time.time() + self.LEASE_SECONDS
+        db.execute("INSERT INTO sessions(id,project_id,expires,path) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,expires=excluded.expires,path=excluded.path", (session, project_id, expires, project["path"]))
 
+
+    def editor(self, db, project_id, *, now=None):
+        return db.execute(
+            "SELECT id FROM sessions WHERE project_id=? AND id NOT LIKE ? AND expires>?",
+            (project_id, self._AGENT_SESSION_PREFIX + "%", time.time() if now is None else now),
+        ).fetchone()
+
+    def editing_state(self, db, project_id, session):
+        editor = self.editor(db, project_id)
+        return {'mode': 'edit' if editor and editor['id'] == session else 'preview'}
+
+    def take_edit_ownership(self, db, project, session):
+        editor = self.editor(db, project['id'])
+        if editor and editor['id'] != session:
+            db.execute("DELETE FROM sessions WHERE id=?", (editor['id'],))
+        self.acquire_edit_lease(db, project, session, persistent=True)
+        return self.editing_state(db, project['id'], session)
+
+    def agent_session_key(self, session: str) -> str:
+        return self._AGENT_SESSION_PREFIX + identifier(session)
+
+    def start_agent_session(self, db, project_id, path: Path, session: str):
+        """Called in the transaction that validates the browser lease and accepts the turn."""
+        now = time.time()
+        db.execute("DELETE FROM sessions WHERE expires<=? AND id LIKE ?",
+                   (now, self._AGENT_SESSION_PREFIX + "%"))
+        db.execute("INSERT INTO sessions(id,project_id,expires,path) VALUES (?,?,?,?)",
+                   (self.agent_session_key(session), str(project_id), now + self.LEASE_SECONDS, str(path)))
+
+    def renew_agent_session(self, session: str) -> bool:
+        with self.transaction() as db:
+            now = time.time()
+            return bool(db.execute("UPDATE sessions SET expires=? WHERE id=? AND expires>?",
+                                   (now + self.LEASE_SECONDS, self.agent_session_key(session), now)).rowcount)
+
+    def release_agent_session(self, session: str):
+        self.release(self.agent_session_key(session))
 
     def release(self, session: str):
         with self.transaction() as db:

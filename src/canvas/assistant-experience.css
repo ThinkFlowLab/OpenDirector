@@ -36,10 +36,17 @@
 .cw-chat-markdown li > p {
   margin: 0;
 }
-.cw-chat-markdown a {
+.cw-chat-markdown :is(a, button[data-streamdown="link"]) {
   color: #b7b3ed;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+.cw-chat-markdown button[data-streamdown="link"] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }
 .cw-chat-markdown blockquote {
   margin: 12px 0;
@@ -160,18 +167,11 @@
 .cw-chat-message-actions button:hover {
   color: var(--chat-text);
 }
-.cw-assistant-toolbar {
-  flex-wrap: wrap;
-  row-gap: 8px;
-}
 .cw-assistant-composer .cw-chat-reference-editor {
   min-height: 78px;
 }
 .cw-assistant-panel .cw-assistant-composer .cw-chat-reference-editor {
   min-height: 78px;
-}
-.cw-assistant-toolbar .cw-assistant-send {
-  margin-left: auto;
 }
 .cw-chat-markdown strong {
   font-weight: 600;

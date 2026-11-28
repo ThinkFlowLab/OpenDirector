@@ -5,10 +5,13 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from opendirector.domain.projects import ProjectError
+from opendirector.domain.rule_facts import duration_matches
 from opendirector.domain.minimax_models import MINIMAX_MODELS, minimax_capabilities
 from opendirector.domain.kling_models import kling_capabilities
+from opendirector.domain.bigmodel_video import cogvideo_capabilities, validate_cogvideo_outputs
+from opendirector.domain.higgsfield import magi2_capabilities, validate_outputs as validate_magi2_outputs
 
-VideoAdapter = Literal['auto', 'fasth3', 'minimax_h3', 'standard']
+VideoAdapter = Literal['auto', 'fasth3', 'fasth3_dual', 'minimax_h3', 'standard']
 Second = Annotated[StrictInt, Field(ge=1, le=60)]
 
 
@@ -53,6 +56,7 @@ class VideoCapabilities(BaseModel):
 
 
 SEEDANCE_20 = re.compile(r'doubao-seedance-2[.-]0(?:[.-](mini|fast))?(?:[.-]\d{6})?')
+SEEDANCE_25 = re.compile(r'doubao-seedance-2[.-]5(?:[.-](flash))?(?:[.-]\d{6})?')
 
 
 def seedance_20_variant(model):
@@ -61,7 +65,17 @@ def seedance_20_variant(model):
     return None if match is None else (match.group(1) or 'full')
 
 
+def seedance_25_variant(model):
+    """Ark's Seedance 2.5 ids: the full model and flash, with an optional date suffix."""
+    match = SEEDANCE_25.fullmatch(model.rsplit('/', 1)[-1].lower())
+    return None if match is None else (match.group(1) or 'full')
+
+
 def preset_capabilities(profile, model=''):
+    if profile == 'higgsfield-magi-2':
+        return magi2_capabilities()
+    if profile == 'bigmodel-cogvideox-3':
+        return cogvideo_capabilities(model)
     if profile == 'kling-official':
         return kling_capabilities(model)
     if profile in {'fasth3-omni', 'vllm-omni-h3'}:
@@ -75,6 +89,11 @@ def preset_capabilities(profile, model=''):
         # mini and fast stop at 720P; the full model adds 1080P and 4K.
         labels = ['480P', '720P'] if seedance_20_variant(model) in {'mini', 'fast'} else ['480P', '720P', '1080P', '4K']
         return {'outputs': [{'resolution': label, 'durations': list(range(4, 16))} for label in labels],
+                'defaultResolution': 'auto', 'defaultDuration': 5, 'dimensionStep': 2}
+    if profile == 'seedance-2.5':
+        # flash stops at 720P; the full model adds 1080P and 4K. Both reach 30 s.
+        labels = ['480P', '720P'] if seedance_25_variant(model) == 'flash' else ['480P', '720P', '1080P', '4K']
+        return {'outputs': [{'resolution': label, 'durations': list(range(4, 31))} for label in labels],
                 'defaultResolution': 'auto', 'defaultDuration': 5, 'dimensionStep': 2}
     return None
 
@@ -90,8 +109,14 @@ def capability_fields(config, rules):
                 raise ProjectError('输出规格超出所选 MiniMax 型号支持的范围。')
         else:
             capabilities = native
+    if rules['profile'] == 'bigmodel-cogvideox-3':
+        validate_cogvideo_outputs(capabilities)
     if rules['profile'] == 'kling-official':
         validate_kling_outputs(capabilities, config['modelId'])
+    if rules['profile'] == 'higgsfield-magi-2':
+        validate_magi2_outputs(capabilities)
+    if rules['profile'] in {'vllm-omni-h3', 'fasth3-omni'}:
+        rules['fractionalDuration'] = True
     rules['videoCapabilities'] = capabilities
     rules['outputResolutions'] = [item['resolution'] for item in capabilities['outputs']] if capabilities else []
     return rules
@@ -106,7 +131,7 @@ def validate_kling_outputs(capabilities, model_id='kling-4.0'):
 
 
 def check_video_config(kind, protocol, adapter, capabilities):
-    if adapter not in {'auto', 'fasth3', 'minimax_h3', 'standard'}:
+    if adapter not in {'auto', 'fasth3', 'fasth3_dual', 'minimax_h3', 'standard'}:
         raise ProjectError('无效的视频适配方式。')
     if kind != 'video' and (adapter != 'auto' or capabilities is not None):
         raise ProjectError('输出能力配置仅适用于视频模型。')
@@ -121,6 +146,12 @@ def check_video_config(kind, protocol, adapter, capabilities):
             capabilities = VideoCapabilities.model_validate(capabilities).model_dump(exclude_none=True)
         except ValueError:
             raise ProjectError('视频输出规格无效，请检查分辨率、尺寸、时长和默认值。') from None
+        if protocol == 'bigmodel_video':
+            validate_cogvideo_outputs(capabilities)
+            return capabilities
+        if protocol == 'higgsfield_open':
+            validate_magi2_outputs(capabilities)
+            return capabilities
         if protocol == 'kling_video':
             validate_kling_outputs(capabilities)
             return capabilities
@@ -130,14 +161,14 @@ def check_video_config(kind, protocol, adapter, capabilities):
                    item.get('width') is not None or item.get('height') is not None for item in capabilities['outputs']):
                 raise ProjectError('MiniMax-H3 官方接口支持 480P、768P、2K 和 4—15 秒，具体取决于型号，不接受自定义像素尺寸。')
             return capabilities
-        if adapter in {'fasth3', 'minimax_h3'}:
+        if adapter in {'fasth3', 'fasth3_dual', 'minimax_h3'}:
             if any(not 4 <= second <= 15 for item in capabilities['outputs'] for second in item['durations']):
                 raise ProjectError('当前 H3 适配支持 4–15 秒，不能通过能力配置扩大此范围。')
             if capabilities['dimensionStep'] != 32:
                 raise ProjectError('H3 输出宽高必须按 32 像素对齐（像素对齐步长须为 32）。')
         # The /videos resolver needs explicit pixels, except for the two H3 buckets
         # it derives itself; saving an unusable declaration would only fail later.
-        derived = {'480P', '768P'} if adapter in {'fasth3', 'minimax_h3'} else set()
+        derived = {'480P', '768P'} if adapter in {'fasth3', 'fasth3_dual', 'minimax_h3'} else set()
         if any(item.get('width') is None and item['resolution'] not in derived for item in capabilities['outputs']):
             raise ProjectError('该适配方式需要为每个输出规格填写像素宽高（H3 的 480P、768P 可按档位推算）。')
     return capabilities
@@ -145,9 +176,12 @@ def check_video_config(kind, protocol, adapter, capabilities):
 
 def validate_video_duration(config, seconds, resolution=None):
     from opendirector.domain.input_rules import input_rules
-    capabilities = input_rules(config).get('videoCapabilities')
+    rules = input_rules(config)
+    if config.get('protocol') == 'vllm_omni' and not rules.get('fractionalDuration', False) and not float(seconds).is_integer():
+        raise ProjectError('当前模型的分辨率与时长组合不受支持，请重新选择；未提交生成。')
+    capabilities = rules.get('videoCapabilities')
     if capabilities:
         choices = [item for item in capabilities['outputs']
                    if not resolution or resolution in {'auto', '自动'} or item['resolution'] == resolution.upper()]
-        if not any(seconds in item['durations'] for item in choices):
+        if not any(duration_matches(seconds, item['durations'], rules.get('fractionalDuration', False)) for item in choices):
             raise ProjectError('当前模型的分辨率与时长组合不受支持，请重新选择；未提交生成。')

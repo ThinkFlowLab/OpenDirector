@@ -1,5 +1,11 @@
 /** Timeline editor, rendering, export and track labels. */
 export const timeline = {
+  "timeline.output.retry": "重试输出",
+  "timeline.output.title": "输出视频",
+  "timeline.output.shortcut": "输出视频 · ⌘Enter / Ctrl+Enter",
+  "timeline.output.keepOpen": "沿用已保存时间线的画幅和帧率。输出期间请保持页面打开。",
+  "timeline.output.publishing": "正在将视频加入画布…",
+  "timeline.output.otherPending": "请先完成或重试另一条时间线的输出。",
   "timeline.text.unsupportedExchange": "FCPXML 和 XML + 素材 ZIP 无法保留文字或字体。请使用可编辑包继续编辑，或使用 MP4 导出渲染视频。",
   "timeline.player.sourceUnavailable": "当前媒体来源不可用，请恢复素材文件后重试。",
   "timeline.package.export": "导出可编辑包",
@@ -105,6 +111,7 @@ export const timeline = {
   "timeline.track.delete": "删除{title}",
   "timeline.track.muted": "静音",
   "timeline.track.audible": "有声",
+  "timeline.track.help": "操作与导出说明",
   "timeline.track.dragHint":
     "拖动画面片段调整顺序；拖动音频调整起点或移至其他音轨。按 Esc 取消，⌘/Ctrl + Z 撤销。 MP4 在浏览器内合成，保留顺序、裁剪、倍速、音量和多轨混音；画面等比适配并补黑边。倍速会同时改变音调。⌘/Ctrl + 滚轮以指针位置缩放时间轴；自动吸附对齐片段边缘与播放头。 FCPXML 为标准剪辑交换格式，ZIP 含原媒体；解压后保持 media 目录相对位置。并非原生剪映工程，也不承诺所有剪辑软件版本兼容。JSON 可在本工程继续编辑。",
 

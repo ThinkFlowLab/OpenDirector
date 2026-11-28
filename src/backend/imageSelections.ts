@@ -3,6 +3,7 @@ import type { BackendAsset } from "./generation.ts";
 import { requireActiveBackendProject } from "./projects.ts";
 import { uploadAsset, type ToolSourceInput } from "./tools.ts";
 import { tNow } from "../i18n/messages.ts";
+import { fetchMediaSource } from "./creationClient.ts";
 
 export interface ImageSelectionBox {
   x: number;
@@ -46,7 +47,7 @@ export async function previewImageSelection(
   signal.throwIfAborted();
   let sourceAssetId = value.sourceAssetId;
   if (!sourceAssetId) {
-    const response = await fetch(value.source.src, { signal });
+    const response = await fetchMediaSource(value.source.src, { signal });
     if (!response.ok)
       throw new Error(tNow("errors.backend.imageRead"));
     sourceAssetId = await uploadAsset(

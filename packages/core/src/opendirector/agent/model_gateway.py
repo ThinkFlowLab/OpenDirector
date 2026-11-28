@@ -1,5 +1,6 @@
 import asyncio
 import codecs
+from contextlib import suppress
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ from time import monotonic, time
 
 import httpx
 
+from opendirector.domain.projects import ProjectError
 from opendirector.integrations.chat_completions import chat_payload
 from opendirector.integrations.http_settings import (
     MODEL_HTTP_HOOKS,
@@ -56,8 +58,13 @@ class ModelGateway:
             return
         if not isinstance(event, dict):
             return
-        for choice in event.get("choices", []):
-            text = choice.get("delta", {}).get("reasoning_content")
+        choices = event.get("choices")
+        if not isinstance(choices, list):
+            return
+        for choice in choices:
+            if not isinstance(choice, dict) or not isinstance(choice.get("delta"), dict):
+                continue
+            text = choice["delta"].get("reasoning_content")
             if isinstance(text, str) and text:
                 self.trace("model.reasoning", request_id, choiceIndex=choice.get("index", 0), text=text)
 
@@ -74,6 +81,7 @@ class ModelGateway:
         status_sent = False
         request_id = None
         started = monotonic()
+        forwarded_bytes = 0
         context = MODEL_JOB_CONTEXT.set((self.project_id, self.turn_id))
         try:
             async with asyncio.timeout(180):
@@ -133,7 +141,7 @@ class ModelGateway:
                             "content-type", "application/json"
                         )
                         writer.write(
-                            f"HTTP/1.1 {response.status_code} Response\r\nContent-Type: {content_type}\r\nConnection: close\r\n\r\n".encode()
+                            f"HTTP/1.1 {response.status_code} Response\r\nContent-Type: {content_type}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".encode()
                         )
                         status_sent = True
                         await writer.drain()
@@ -141,8 +149,12 @@ class ModelGateway:
                         buffer = ""
                         event_lines = []
                         async for chunk in response.aiter_bytes():
-                            writer.write(chunk)
+                            if not chunk:
+                                continue
+                            # Frame decoded upstream bytes, not the provider's wire chunks.
+                            writer.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
                             await writer.drain()
+                            forwarded_bytes += len(chunk)
                             if "text/event-stream" not in content_type:
                                 continue
                             buffer += decoder.decode(chunk)
@@ -156,7 +168,19 @@ class ModelGateway:
                                     event_lines.clear()
                                     if data != "[DONE]":
                                         self.trace_reasoning(request_id, data)
+                # Only successful exhaustion and cleanup may terminate this response.
+                # Sending this in finally would disguise a truncated body as complete.
+                writer.write(b"0\r\n\r\n")
+                await writer.drain()
+                self.trace("model.completed", request_id, forwardedBytes=forwarded_bytes,
+                           elapsedMs=round((monotonic() - started) * 1000))
+        except asyncio.CancelledError:
+            if request_id is not None:
+                self.trace("model.cancelled", request_id, forwardedBytes=forwarded_bytes)
+            raise
         except (
+            ProjectError,
+            TypeError,
             httpx.HTTPError,
             OSError,
             ValueError,
@@ -166,16 +190,23 @@ class ModelGateway:
             TimeoutError,
         ) as failure:
             if request_id is not None:
-                self.trace("model.error", request_id, error=type(failure).__name__)
+                self.trace("model.error", request_id, error=type(failure).__name__,
+                           forwardedBytes=forwarded_bytes)
             logger.error(
                 f"agent.model.error turn_id={self.turn_id} failure={type(failure).__name__}"
             )
             if not status_sent:
-                writer.write(
-                    b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                )
-                await writer.drain()
+                status = failure.status if isinstance(failure, ProjectError) else 502
+                # Do not expose provider credentials or local exception messages.
+                with suppress(OSError):
+                    writer.write(
+                        f"HTTP/1.1 {status} Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".encode()
+                    )
+                    await writer.drain()
         finally:
             MODEL_JOB_CONTEXT.reset(context)
             writer.close()
-            await writer.wait_closed()
+            # A broken downstream connection must not replace the original failure
+            # or cancellation with a cleanup error.
+            with suppress(OSError, TimeoutError):
+                await asyncio.wait_for(writer.wait_closed(), 5)

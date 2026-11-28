@@ -1,3 +1,4 @@
+import { assistant as chineseAssistant } from "../i18n/messages/zh-CN/assistant.ts";
 import type { ReferenceContent } from "../canvas/chatReferenceContent.ts";
 import { defaultTranslate } from "../canvas/assistantTranslate.ts";
 import type { Translate } from "../i18n/I18nProvider.tsx";
@@ -39,6 +40,7 @@ export interface ChatTool {
   status: "running" | "complete" | "failed" | "interrupted";
   textOffset: number;
   error?: string | null;
+  code?: string;
   message?: string | null;
   taskId?: string | null;
   arguments?: Record<string, unknown>;
@@ -47,7 +49,7 @@ export interface ChatTool {
 }
 export interface ConversationSummary {
   id: string;
-  title: string;
+  title: string | null;
   messageCount: number;
   hasDraft: boolean;
 }
@@ -55,7 +57,13 @@ export interface ChatPlanEntry {
   content: string;
   status: "pending" | "in_progress" | "completed";
 }
+export interface ChatSource {
+  id: string;
+  url: string;
+  title: string;
+}
 export interface ChatMessage {
+  sources?: ChatSource[];
   plan?: ChatPlanEntry[];
   runtime?: AgentRuntime;
   tools?: ChatTool[];
@@ -65,12 +73,23 @@ export interface ChatMessage {
   content?: ReferenceContent | null;
   status: "complete" | "streaming" | "stopped" | "interrupted";
   assets?: ChatAsset[];
-  model?: string;
+  model?: string | null;
+  modelIsCliDefault?: boolean;
+  runtimeModel?: string | null;
   thinking?: Thinking;
   source?: "preview" | "model";
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  durationMs?: number | null;
 }
 
 export type Thinking = "auto" | "low" | "medium" | "high";
+export interface AssistantModelSelection {
+  runtime: AgentRuntime;
+  modelId?: string;
+  runtimeModel?: string | null;
+  thinking: Thinking;
+}
 export type ModelSelections = Partial<
   Record<"agent" | "image" | "video" | "audio", string | null>
 >;
@@ -100,12 +119,35 @@ export interface Conversation extends ChatDraft {
   messages: ChatMessage[];
 }
 
+export function draftContentIsEmpty(
+  content: Conversation["draftContent"] | undefined,
+) {
+  if (!content || content.length === 0) return true;
+  return content.every(
+    (part) =>
+      part.type === "text" &&
+      typeof part.text === "string" &&
+      !part.text.trim(),
+  );
+}
+
+export function conversationIsEmpty(value: Conversation) {
+  return (
+    value.messages.length === 0 &&
+    !value.draft.trim() &&
+    value.assets.length === 0 &&
+    !(value.skills && value.skills.length) &&
+    draftContentIsEmpty(value.draftContent)
+  );
+}
+
 export type ChatEvent =
   | { type: "start"; conversation: Conversation }
   | { type: "thinking" }
   | { type: "plan"; entries: ChatPlanEntry[] }
   | ({ type: "tool" } & ChatTool)
   | { type: "delta"; text: string }
+  | { type: "sources"; sources: ChatSource[] }
   | { type: "end"; conversation: Conversation | null; error: string | null };
 
 export interface ChatRequest {
@@ -120,6 +162,21 @@ export interface ChatRequest {
   runtime?: AgentRuntime;
   runtimeModel?: string | null;
   skills?: string[];
+}
+
+function normalizeConversation(value: Conversation): Conversation {
+  const messages = value.messages.map((message, index) => {
+    const previous = value.messages[index - 1];
+    // Older replies stored the fallback label before the API exposed its source.
+    if (message.role === "assistant" && message.modelIsCliDefault === undefined &&
+        message.model === chineseAssistant["assistant.agent.cliDefault"] &&
+        message.runtime !== undefined && message.runtime !== "default" &&
+        previous?.role === "user" && !previous.runtimeModel) {
+      return { ...message, modelIsCliDefault: true };
+    }
+    return message;
+  });
+  return { ...value, messages };
 }
 
 const path = (id: string) => `/creation/projects/${id}/assistant`;
@@ -137,7 +194,7 @@ export const activateConversation = (
     path(projectId) +
       (create ? "/conversations" : `/conversations/${id}/activate`),
     create ? json("POST", { id }) : json("POST", {}),
-  );
+  ).then(normalizeConversation);
 const runtimeStatuses = new Map<AgentRuntime, { value: RuntimeInfo; expires: number }>();
 const discoveryTtlMs = 30_000;
 
@@ -163,7 +220,7 @@ export async function conversation(
   const { activeTurnId, ...saved } = await request<
     Conversation & { activeTurnId?: string }
   >(path(id));
-  return { conversation: saved, activeTurnId: activeTurnId ?? null };
+  return { conversation: normalizeConversation(saved), activeTurnId: activeTurnId ?? null };
 }
 export const saveChatDraft = (id: string, draft: ChatDraft) =>
   request(path(id) + "/draft", json("PUT", draft));
@@ -232,6 +289,9 @@ async function readChatEvents(
         if (frame.startsWith("data: ")) {
           const event = JSON.parse(frame.slice(6)) as ChatEvent;
           ended ||= event.type === "end";
+          if ((event.type === "start" || event.type === "end") && event.conversation) {
+            event.conversation = normalizeConversation(event.conversation);
+          }
           onEvent(event);
         }
       }

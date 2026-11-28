@@ -4,15 +4,15 @@ from uuid import UUID
 
 from opendirector.domain.projects import ProjectError
 
-from .canvas import MediaCanvasItem, role_after
+from .canvas import GroupCanvasItem, MediaCanvasItem, role_after
 from .commands import Command, ContractIssue, IssueCode
 from .project import ProjectSnapshot
 
 
 class ContractError(ValueError):
-    def __init__(self, code, message, object_id=None):
+    def __init__(self, code, message, object_id=None, *, related_object_id=None):
         super().__init__(message)
-        self.issue = ContractIssue(code=code, message=message, objectId=object_id)
+        self.issue = ContractIssue(code=code, message=message, objectId=object_id, relatedObjectId=related_object_id)
 
     @classmethod
     def from_error(cls, error: ValueError | ProjectError, object_id: UUID | None = None) -> 'ContractError':
@@ -103,3 +103,33 @@ def validate_command(command: Command, project: ProjectSnapshot):
         current = get('editor_document', payload.document.id)
         if current.kind != payload.document.kind:
             raise ContractError('invalid_input', 'Editor document kind cannot change', current.id)
+
+
+def validate_published_plans(command: Command, before: ProjectSnapshot, after: ProjectSnapshot) -> None:
+    old_plans = {item.id: item for item in before.canvasItems if isinstance(item, GroupCanvasItem) and item.runPlan}
+    publication = command.payload.groupId if command.type == 'group.publishRun' else None
+    for item in after.canvasItems:
+        if isinstance(item, GroupCanvasItem) and item.runPlan is not None:
+            if item.id not in old_plans and item.id != publication:
+                raise ContractError('role_restricted', '请使用发布命令生成已发布计划。', item.id)
+    if not old_plans:
+        return
+    old_items = {item.id: item for item in before.canvasItems}
+    new_items = {item.id: item for item in after.canvasItems}
+    new_assets = {asset.id: asset for asset in after.assets}
+    for group in old_plans.values():
+        updated = new_items.get(group.id)
+        if (not isinstance(updated, GroupCanvasItem) or not updated.visible
+                or updated.parentId != group.parentId or updated.runPlan != group.runPlan or updated.assembly != group.assembly
+                or updated.runPlanItemId != group.runPlanItemId or updated.runDefinitionId != group.runDefinitionId
+                or updated.runPlanLocale != group.runPlanLocale or updated.runPlanNotes != group.runPlanNotes):
+            raise ContractError('role_restricted', '已发布的计划定义为只读。', group.id)
+        card = old_items[group.runPlanItemId]
+        updated_card = new_items.get(card.id)
+        if (updated_card is None or updated_card.kind != 'text' or not updated_card.visible
+                or not updated_card.locked or updated_card.parentId != group.id
+                or updated_card.binding != card.binding):
+            raise ContractError('role_restricted', '已发布的计划卡为只读。', card.id)
+        source = new_assets.get(group.runPlan.source.assetId)
+        if source is None or source.revision != group.runPlan.source.revision:
+            raise ContractError('role_restricted', '已发布的计划仍引用此源片。', group.runPlan.source.assetId)

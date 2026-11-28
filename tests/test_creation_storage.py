@@ -20,6 +20,9 @@ from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects, read_json
 
 
+pytestmark = pytest.mark.cpu
+
+
 @pytest.fixture
 def unrecycled(monkeypatch):
     """Delete through the filesystem so tests never touch the machine recycle bin."""
@@ -193,8 +196,10 @@ def test_leases_expiry_external_moves_and_closed_rename_guards(projects):
     created = create(projects)
     session, other = str(uuid4()), str(uuid4())
     projects.open(created.projectId, session)
-    with pytest.raises(ProjectError, match='其他窗口'):
+    with pytest.raises(ProjectError, match='其他窗口') as busy:
         projects.open(created.projectId, other)
+    # Another window is not a lock timeout: it must not share the retryable code.
+    assert busy.value.code == 'project_open_elsewhere'
     with pytest.raises(ProjectError, match='关闭'):
         projects.execute(rename(created))
     (projects.root / 'Example').rename(projects.root / 'Moved outside app')
@@ -443,6 +448,7 @@ def test_cached_history_still_detects_changed_ancestor_with_same_size_and_mtime(
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Commit signature caching requires POSIX change time')
+@pytest.mark.merge
 def test_long_history_is_validated_from_disk_only_once(projects, monkeypatch):
     # Each read validates the whole chain; a cache smaller than the history
     # would reparse every record on every read of a long project.
@@ -940,6 +946,50 @@ def test_first_autosave_after_a_cold_open_reuses_the_warmed_chain(projects, monk
     assert decoded == []  # The warmed ancestors are trusted; only a new record is built.
 
 
+def test_write_replays_outside_catalog_lock_and_rechecks_changed_head(projects, monkeypatch):
+    created = create(projects)
+    planned = rename(created, 'Final', revision=2)
+    intervening = rename(created, 'Intervening', revision=1)
+    history = projects._history
+    scanned = []
+
+    def advance(path, manifest):
+        assert not projects.local.lock.is_locked
+        records = history(path, manifest)
+        scanned.append(manifest.head)
+        if len(scanned) == 1:
+            assert projects.execute(intervening).status == 'applied'
+        return records
+
+    monkeypatch.setattr(projects, '_history', advance)
+    assert projects.execute(planned).status == 'applied'
+    assert scanned == [created.commandId, created.commandId, intervening.commandId]
+    assert projects.snapshot(created.projectId).project.name == 'Final'
+
+
+@pytest.mark.parametrize('read', ['receipt', 'changes'])
+def test_commit_reads_retry_when_rename_moves_the_history(projects, monkeypatch, read):
+    created = create(projects)
+    moved = rename(created)
+    history = projects._history
+    scanned = []
+
+    def relocate(path, manifest):
+        scanned.append(path.name)
+        if len(scanned) == 1:
+            assert projects.execute(moved).status == 'applied'
+        return history(path, manifest)
+
+    monkeypatch.setattr(projects, '_history', relocate)
+    if read == 'receipt':
+        assert projects.receipt(created.projectId, created.commandId).status == 'applied'
+    else:
+        changes = projects.changes(created.projectId)
+        assert changes['currentCursor'] == 2
+        assert [event.commandId for event in changes['events']] == [created.commandId, moved.commandId]
+    assert scanned == ['Example', 'Example', 'Renamed']
+
+
 def test_plain_snapshot_reads_do_not_warm_history_in_the_background(projects, monkeypatch):
     # Job scans call snapshot() for every project; that must not validate every
     # chain in the background the way opening a canvas does.
@@ -1171,3 +1221,19 @@ def test_concurrent_cold_record_parses_keep_cache_byte_accounting(projects, monk
     assert len(cold._records_cache) == 1
     assert cold._records_cache_bytes == sum(
         entry[0][2] for entry in cold._records_cache.values())
+
+
+def test_a_lapsed_lease_has_a_stable_code_and_a_heartbeat_restores_it(projects):
+    created = create(projects)
+    session = str(uuid4())
+    projects.open(created.projectId, session)
+    client = uuid4()
+    view = {'projectId': str(created.projectId), 'clientId': str(client)}
+    with projects.local.transaction() as db:
+        db.execute('UPDATE sessions SET expires=0')
+    with pytest.raises(ProjectError) as lapsed:
+        projects.view(created.projectId, client, view, session=session)
+    # The page renews and resends on this code instead of failing every save.
+    assert lapsed.value.status == 409 and lapsed.value.code == 'session_expired'
+    projects.heartbeat(session, created.projectId)
+    projects.view(created.projectId, client, view, session=session)

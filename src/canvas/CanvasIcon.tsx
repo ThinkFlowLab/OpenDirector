@@ -130,6 +130,7 @@ const icons: Record<string, ReactNode> = {
       <path d="M22 21H7M5 11l9 9" />
     </>
   ),
+  newProject: <><path d="M20 11a8 8 0 0 1-8 8H4v-8a8 8 0 1 1 16 0Z" /><path d="M12 7v8M8 11h8" /></>,
   close: <path d="m6 6 12 12M6 18 18 6" />,
   check: <path d="m5 12 4 4L19 6" />,
   pencil: (
@@ -208,6 +209,12 @@ const icons: Record<string, ReactNode> = {
       <circle cx="7.5" cy="10" r=".7" />
       <circle cx="10" cy="6.5" r=".7" />
       <circle cx="15" cy="7" r=".7" />
+    </>
+  ),
+  promptWand: (
+    <>
+      <path d="m3 19 9-9 3 3-9 9-3-3Zm6.5-6.5 3 3" />
+      <path d="m18 2 1.2 3.8L23 7l-3.8 1.2L18 12l-1.2-3.8L13 7l3.8-1.2L18 2Z" />
     </>
   ),
   sparkle: (

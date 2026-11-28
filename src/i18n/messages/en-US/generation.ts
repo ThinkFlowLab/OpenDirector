@@ -1,5 +1,10 @@
 /** Composer, generation state, model choice and generation rules. */
 export const generation = {
+  "generation.duration.fractionalHint":
+    "H3 accepts fractional seconds and aligns output frames upward to 17k+5 at 24 fps.",
+  "generation.duration.aligned": "Output: {frames} frames · {seconds} s",
+  "generation.bigmodel.watermarkWaiver":
+    "BigModel requires a signed waiver to remove watermarks. Complete it in Personal Center → Security Management → Watermark Removal Management; otherwise outputs may still contain watermarks.",
   "generation.model.unconfigured":
     "No generation model is configured yet. Add one in Settings → Model services.",
   "generation.model.unavailable": "The selected model is unavailable",
@@ -10,21 +15,59 @@ export const generation = {
   "generation.model.localDemo": "Local interactive demo",
   "generation.model.agent": "Agent model",
   "generation.model.agentPlaceholder": "Choose an Agent model",
-  "generation.model.agentUnavailable": "The previous Agent model is unavailable",
-  "generation.model.agentUnsupported": "This Agent does not support that reference",
+  "generation.model.agentUnavailable":
+    "The previous Agent model is unavailable",
+  "generation.model.agentUnsupported":
+    "This Agent does not support that reference",
   "generation.model.agentRequired": "Choose an Agent model first",
 
   "generation.mode.reference": "Universal reference",
   "generation.mode.firstLast": "First and last frames",
+  "generation.mode.control": "Structure control",
+  "generation.duration.followsControl": "Follows control video",
   "generation.mode.continuation": "Continue",
   "generation.imagePreset": "Image presets",
   "generation.videoMode": "Video mode",
   "generation.preset.none": "Free creation",
+  "generation.preset.hint": "Choose a preset image style",
   "generation.preset.productViews": "Product three views",
   "generation.preset.demo": "Local interaction demo",
   "generation.preset.audioWorkflow": "Local audio workflow",
   "generation.preset.musicIdea": "Music idea",
   "generation.preset.ambienceIdea": "Ambient sound idea",
+  "generation.preset.skill.heading": "Preset: {preset}",
+  "generation.preset.skill.references":
+    "{count} reference images are attached: {list}. Match subjects, scenes and other references by number and do not mix the roles of different references.",
+  "generation.preset.skill.referenceItem": "reference {index} ({title})",
+  "generation.preset.skill.separator": ", ",
+  "generation.preset.skill.sequence":
+    "Produce one image per step, in this order:",
+  "generation.preset.description.three-view":
+    "Shows the same character in front, side and back full-body views. Upload a reference image or describe the character in words.",
+  "generation.preset.description.four-view":
+    "Creates a horizontal four-view character sheet with a frontal close-up in the last panel. Upload a reference image or describe the character in words.",
+  "generation.preset.description.face-three-view":
+    "Shows the same face from the front, left and right. Upload a reference image or describe the facial features and hair.",
+  "generation.preset.description.product-three-view":
+    "Shows the same product from the front, side and back. Upload a reference image or describe the product in words.",
+  "generation.preset.description.storyboard":
+    "Plans wide, medium, close and detail shots of the same scene. Upload a reference image or describe the setting and action.",
+  "generation.preset.description.multi-camera":
+    "Shows one scene from the front, front left, front right and above. Upload a reference image or describe the subject and setting.",
+  "generation.preset.description.recommendedRatio": "Recommended aspect ratio {ratio}.",
+  "generation.preset.description.faceEmphasis":
+    "The front and side views keep facial features out of frame to emphasize the frontal close-up.",
+  "generation.preset.faceEmphasis": "Face emphasis",
+  "generation.preset.labelWithEmphasis": "{preset} ({emphasis})",
+  "generation.preset.faceEmphasisHint":
+    "Frames the front and side body views from the shoulders down, with the frontal face shown in the fourth panel.",
+  "generation.preset.tune": "Adjust",
+  "generation.preset.remove": "Remove preset",
+  "generation.preset.view": "View the {preset} prompt",
+  "generation.preset.promptTitle": "{preset} - Prompt",
+  "generation.preset.copy": "Copy",
+  "generation.preset.copied": "Copied",
+  "generation.preset.close": "Close",
   "generation.referenceMode": "Reference mode",
   "generation.referenceMode.melody": "Follow reference melody",
   "generation.referenceMode.full": "Follow melody and chords",
@@ -37,7 +80,8 @@ export const generation = {
   "generation.duration": "Video duration",
   "generation.duration.choose": "Choose video duration",
   "generation.duration.default": "Service default",
-  "generation.duration.unavailable": "This model has no selectable durations yet",
+  "generation.duration.unavailable":
+    "This model has no selectable durations yet",
   "generation.duration.seconds": {
     one: "{count} second",
     other: "{count} seconds",
@@ -47,12 +91,21 @@ export const generation = {
 
   "generation.field.ratio": "Aspect ratio",
   "generation.field.resolution": "Resolution",
+  "generation.field.quality": "Quality",
+  "generation.field.qualityAria": "Image quality {value}",
+  "generation.quality.auto": "Auto",
+  "generation.quality.low": "Low",
+  "generation.quality.medium": "Medium",
+  "generation.quality.high": "High",
   "generation.field.count": "Count",
   "generation.field.audio": "Generate audio",
-  "generation.field.audioPending": "Request audio (service support unconfirmed)",
-  "generation.field.waitCapabilities": "Waiting for service capabilities; not verified",
+  "generation.field.audioPending":
+    "Request audio (service support unconfirmed)",
+  "generation.field.waitCapabilities":
+    "Waiting for service capabilities; not verified",
   "generation.field.followReference": "Follow reference duration",
-  "generation.field.maxDuration": "Maximum duration (the model may finish earlier)",
+  "generation.field.maxDuration":
+    "Maximum duration (the model may finish earlier)",
   "generation.field.maxDurationSeconds": "Up to {count} seconds",
   "generation.field.imageCount": {
     one: "{count} image",
@@ -66,7 +119,8 @@ export const generation = {
   "generation.field.defaultVoice": "Default voice",
   "generation.field.requiredVoiceId": "Voice ID (required)",
   "generation.field.voiceIdPlaceholder": "Enter a Voice ID",
-  "generation.field.mossVoiceHelp": "Choose a voice in the MOSS voice library, open its menu, copy its Voice ID, and paste it into the Voice ID field.",
+  "generation.field.mossVoiceHelp":
+    "Choose a voice in the MOSS voice library, open its menu, copy its Voice ID, and paste it into the Voice ID field.",
   "generation.field.mossVoiceLibrary": "MOSS voice library",
   "generation.field.voiceLibrary": "Voice library",
   "generation.field.signature": "Generation settings",
@@ -87,12 +141,27 @@ export const generation = {
   "generation.voice.close": "Close voice library",
   "generation.voice.demo": "Anime Sponge",
 
+  "generation.optimize.action": "Optimize prompt",
+  "generation.optimize.agentLoading": "The Agent model selection is loading. Try again shortly.",
+  "generation.optimize.alreadyDone": "This prompt is already optimized",
+  "generation.optimize.running": "Optimizing prompt...",
+  "generation.optimize.toast": "Prompt optimized. Press {shortcut} to undo.",
+  "generation.optimize.doneAudioOmitted": "Some audio was omitted.",
+  "generation.optimize.changed":
+    "The prompt or node changed. Your latest input was kept.",
+  "generation.optimize.failed":
+    "Optimization failed. Your original prompt was kept.",
+  "generation.optimize.saveFailed":
+    "Save the canvas before optimizing with the latest references.",
+
   "generation.prompt.image": "Prompt",
   "generation.prompt.textLabel": "Text prompt",
   "generation.prompt.textPlaceholder":
     "Enter a prompt, or @ a reference and let the Agent write the text",
   "generation.prompt.reading": "Text to read",
   "generation.prompt.music": "Music style",
+  "generation.prompt.implicitTextPlaceholder":
+    "Leave blank to use the connected text reference as the prompt, or type to add to it",
   "generation.prompt.imagePlaceholder":
     "Upload a reference, type a prompt, or @ a subject to describe the image you want",
   "generation.prompt.videoPlaceholder":
@@ -136,6 +205,8 @@ export const generation = {
   "generation.reference.connected": "Reference connected node",
   "generation.reference.upload": "Upload node reference",
   "generation.reference.title": "{role}: {title}",
+  "generation.reference.readingContext":
+    "Text-to-speech does not send these references to the model. You can still inspect or remove them.",
 
   "generation.action.cancel": "Cancel generation",
   "generation.action.submit": "Generate",
@@ -175,6 +246,8 @@ export const generation = {
   "generation.history.empty": "No generation history of this type.",
   "generation.history.selectJob": "Select history {title}",
   "generation.history.readingPreview": "Reading result preview…",
+  "generation.history.requestedDuration": "Requested duration: {seconds} s",
+  "generation.history.resultDuration": "Result duration: {seconds} s",
   "generation.history.query": "Check the original task again",
   "generation.history.cancelCloud": "Cancel cloud task",
   "generation.history.cancelTool": "Stop tool task",
@@ -186,7 +259,8 @@ export const generation = {
   "generation.history.place": "Place result again",
   "generation.history.restoreNode": "Restore request node",
   "generation.history.restoreConfig": "Restore generation settings",
-  "generation.history.restoreFromAssets": "Restore settings from historical assets",
+  "generation.history.restoreFromAssets":
+    "Restore settings from historical assets",
 
   "generation.picker.label": "Choose enabled models",
   "generation.picker.heading": "Models",
@@ -201,6 +275,8 @@ export const generation = {
   "generation.picker.modelId": "Model ID (the service's served-model-name)",
   "generation.picker.add": "Add",
   "generation.picker.cancel": "Cancel",
+  "generation.picker.addressRequired": "Enter the service address first.",
+  "generation.picker.keyRequired": "Enter an API Key first.",
   "generation.picker.retry": "{error} You can retry or add a model manually.",
   "generation.picker.search": "Search models",
   "generation.picker.searchPlaceholder": "Search model names…",
@@ -212,10 +288,19 @@ export const generation = {
   "generation.picker.selectAll": "Select all current results",
   "generation.picker.deselectAll": "Deselect all",
   "generation.picker.fetching": "Fetching the model list",
+  "generation.picker.fetched": {
+    one: "{count} model fetched",
+    other: "{count} models fetched",
+  },
+  "generation.picker.loadedPreset": {
+    one: "{count} preset model loaded",
+    other: "{count} preset models loaded",
+  },
   "generation.picker.connecting": "Connecting to the service…",
   "generation.picker.noReturned": "The service returned no models",
   "generation.picker.noneAdded": "No models added yet",
-  "generation.picker.manualHint": "You can add a model ID supported by the service.",
+  "generation.picker.manualHint":
+    "You can add a model ID supported by the service.",
   "generation.picker.fetchHint":
     "Enter the service address, choose Fetch models, then select the models to enable.",
   "generation.picker.noSelection": "No model selected yet",
@@ -230,8 +315,10 @@ export const generation = {
   "generation.picker.duplicate": "That model is already selected.",
 
   "generation.error.sourceMissing": "The reference source no longer exists.",
-  "generation.error.jobFailed": "Generation failed for “{name}”. Check generation history before retrying.",
-  "generation.error.jobFailedDetail": "Generation failed for “{name}”: {detail}",
+  "generation.error.jobFailed":
+    "Generation failed for “{name}”. Check generation history before retrying.",
+  "generation.error.jobFailedDetail":
+    "Generation failed for “{name}”: {detail}",
   "generation.error.batchNotInserted":
     "The node content or settings changed. The media remains in project assets, but this batch of references was not inserted.",
   "generation.error.batchRejected":
@@ -248,7 +335,8 @@ export const generation = {
     "This mode uses a prompt or text to read, not this reference",
   "generation.issue.firstLastImage":
     "First-and-last-frame mode uses image nodes for frame media",
-  "generation.issue.cameraMotionVideo": "Camera-motion tools are for video only",
+  "generation.issue.cameraMotionVideo":
+    "Camera-motion tools are for video only",
   "generation.issue.toolParams": "The tool has no settings yet",
   "generation.issue.subjectEmpty": "The subject has no usable primary media",
   "generation.issue.subjectResource":
@@ -269,8 +357,10 @@ export const generation = {
     "This resolution is not verified. Choose a verified value in the panel.",
   "generation.issue.duration":
     "The duration is outside the verified range for this model.",
-  "generation.issue.videoMode": "This model does not support the selected video mode.",
-  "generation.issue.lastNeedsFirst": "Choose a first frame before using a last frame.",
+  "generation.issue.videoMode":
+    "This model does not support the selected video mode.",
+  "generation.issue.lastNeedsFirst":
+    "Choose a first frame before using a last frame.",
   "generation.issue.frameMissing":
     "{label} media is not connected or is missing. Choose it again.",
   "generation.issue.promptOrFirst": "Enter a prompt or choose a first frame.",

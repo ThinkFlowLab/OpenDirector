@@ -1,12 +1,17 @@
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Streamdown } from "streamdown";
+import type { LinkSafetyModalProps } from "streamdown";
 import type { ChatMessage, ChatTool } from "../backend/chat";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey } from "../i18n/types.ts";
 import { CanvasIcon } from "./CanvasIcon";
+import { AssistantLinkInfo } from "./AssistantLinkInfo";
 import { activityProgress, replySections, toolLabel } from "./assistantActivity.ts";
 import { assistantToolText } from "./assistantToolText.ts";
+import { assistantCitationFormatter } from "./assistantCitations.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
+import { chatTurnTiming } from "./turnTiming.ts";
+import { hidePartialSuggestionMarker, parseSuggestedReplies } from "./suggestedReplies.ts";
 
 const STATUS: Record<ChatTool["status"], MessageKey> = {
   running: "assistant.reply.status.running",
@@ -29,7 +34,7 @@ function ToolActivity({ tool, t }: { tool: ChatTool; t: Translate }) {
       </summary>
       <div className="cw-chat-activity-detail">
         {(tool.error || tool.message) && (
-          <p>{assistantToolText(tool.error || tool.message!, t)}</p>
+          <p>{assistantToolText(tool.error || tool.message!, t, tool.code)}</p>
         )}
         {tool.arguments && <details className="cw-chat-tool-data">
           <summary><CanvasIcon name="chevronRight" size={12} />{t("assistant.reply.arguments")}</summary>
@@ -91,14 +96,23 @@ function ToolGroup({ tools, t }: { tools: ChatTool[]; t: Translate }) {
 export const AssistantReply = memo(function AssistantReply({
   message,
   thinking,
+  onSuggestion,
   t = defaultTranslate,
 }: {
   message: ChatMessage;
   thinking: boolean;
+  onSuggestion?: (text: string) => void;
   /** Injected by the panel; standalone mounts fall back to the active locale. */
   t?: Translate;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const formatText = useMemo(() => assistantCitationFormatter(
+    message.text, message.sources, message.status === "streaming", t,
+  ), [message.text, message.sources, message.status, t]);
+  const linkSafety = useMemo(() => ({
+    enabled: true,
+    renderModal: (props: LinkSafetyModalProps) => props.isOpen ? <AssistantLinkInfo {...props} t={t} /> : null,
+  }), [t]);
   const copyLabel =
     copyState === "copied"
       ? t("assistant.reply.copied")
@@ -113,13 +127,23 @@ export const AssistantReply = memo(function AssistantReply({
         controls={false}
         mode={message.status === "streaming" ? "streaming" : "static"}
         isAnimating={message.status === "streaming"}
+        linkSafety={linkSafety}
       >
-        {text}
+        {formatText(text)}
       </Streamdown>
     );
-  const sections = replySections(message);
+  const timing = chatTurnTiming(message, t);
+  const sections = useMemo(() => replySections(message), [message]);
+  const lastPart = sections.reply.at(-1) ?? sections.activity.at(-1);
+  const tail = lastPart?.type === "text" && lastPart.id === "tail" ? lastPart.text : "";
+  const suggestionBlock = useMemo(() => parseSuggestedReplies(tail), [tail]);
+  const parsed = suggestionBlock?.suggestions;
+  const suggestions = parsed && parsed.options.length >= 3 ? parsed : null;
+  const suggest = message.status === "complete" ? onSuggestion : undefined;
+  const copyTail = suggestions?.prefix || (suggestionBlock?.textWithoutMarker ?? hidePartialSuggestionMarker(tail));
+  const tailText = suggestions && suggest ? suggestions.prefix : parsed === null ? tail : copyTail;
   const renderPart = (part: ReturnType<typeof replySections>["reply"][number]) => part.type === "text"
-    ? markdown(part.text, part.id)
+    ? markdown(part.id === "tail" ? tailText : part.text, part.id)
     : <ToolGroup key={part.id} tools={part.tools} t={t} />;
   return (
     <>
@@ -144,12 +168,20 @@ export const AssistantReply = memo(function AssistantReply({
         <div className="cw-chat-activity-detail">{sections.activity.map(renderPart)}</div>
       </details>}
       {sections.reply.map(renderPart)}
+      {suggestions && suggest && (
+        <div className="cw-chat-suggestions" role="group" aria-label={t("assistant.reply.suggestions")}>
+          {suggestions.options.map((text) => (
+            <button key={text} type="button" title={t("assistant.reply.useSuggestion")} onClick={() => suggest(text)}>{text}</button>
+          ))}
+        </div>
+      )}
       {message.status === "streaming" && (
         <div className="cw-chat-progress" role="status" aria-live="polite">
           <span className="cw-chat-waiting" aria-hidden="true"><i /><i /><i /></span>
           {activityProgress(message, thinking, t)}
         </div>
       )}
+      {timing && <small className="cw-assistant-message-status cw-assistant-turn-timing">{timing}</small>}
       {!message.text &&
         !message.tools?.length &&
         message.status !== "streaming" && (
@@ -163,7 +195,8 @@ export const AssistantReply = memo(function AssistantReply({
             title={copyLabel}
             onClick={async () => {
               try {
-                await navigator.clipboard.writeText(message.text);
+                const plainReply = tail ? message.text.slice(0, -tail.length) + copyTail : message.text;
+                await navigator.clipboard.writeText(formatText(plainReply));
                 setCopyState("copied");
               } catch {
                 setCopyState("failed");

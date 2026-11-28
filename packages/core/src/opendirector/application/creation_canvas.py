@@ -4,7 +4,7 @@ Mutations work on a private draft. The repository validates and publishes the
 entire transaction once, including versions, receipt and outbox event.
 """
 import asyncio
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
@@ -24,6 +24,9 @@ from opendirector.domain.input_rules import input_rules
 from opendirector.domain.rule_facts import FRAME_IMAGE_LIMIT
 from opendirector.domain.projects import ProjectError
 from opendirector.ports.gateway import gateway
+
+DELIVERY_GUIDANCE = ('Inspect this existing asset directly. Local copies and extracted inspection frames do not need '
+    'publishing or new canvas items. Publish only new deliverables; create another display only when requested.')
 
 COLLECTIONS = {'canvas_item': 'canvasItems', 'generation_spec': 'generationSpecs',
                'reference': 'references', 'editor_document': 'editorDocuments',
@@ -142,8 +145,8 @@ def reference_policy(spec, values, rules=None, *, selected_frame=False):
                 raise ContractError('reference_invalid', '指定的首尾帧不能作为图片传入当前模型；请使用明确的图片素材引用，且不要填写主体槽位 subjectRole。', value.referenceId)
         if value.subjectRole is not None and rules is not None:
             ignored = ignored or kind not in rules.allowedKinds or (kind == 'image' and not rules.maxImages) or (kind == 'video' and not rules.maxVideos) or (kind == 'audio' and not rules.maxAudios)
-            if spec.kind == 'video' and spec.parameters.videoMode == 'continuation' and kind == 'video':
-                ignored = True  # Subject clips are not a remote continuation ID.
+            if spec.kind == 'video' and spec.parameters.videoMode in {'continuation', 'control'} and kind == 'video':
+                ignored = True  # Subject clips are neither a remote continuation ID nor a control video.
         transmission = 'context_only' if ignored else 'latent' if value.role == 'continuation' else 'metadata' if spec.kind == 'text' and kind in {'audio', 'video'} else 'content'
         output.append(value.model_copy(update={'transmission': transmission}))
     return tuple(output)
@@ -236,6 +239,59 @@ def reference_evidence(snapshot, spec, reference):
     return 'used' if old and identity(old) == identity(now) else 'pending'
 
 
+def _timeline_clip_ids(document):
+    if not document or document.get('kind') != 'timeline':
+        return set()
+    return {clip['id'] for track in document['data']['tracks'] for clip in track['clips']}
+
+
+def _asset_key(ref):
+    return (str(ref.assetId), ref.revision, ref.fingerprint, ref.kind)
+
+
+def bind_unique_timeline_sources(data, document, *, new_slot_ids):
+    """Attach assembly provenance for new timeline clips with one visible source.
+
+    Multiple visible nodes that share the same asset are left unconnected. Existing
+    connections and already saved clips are left unchanged. External imports with
+    no canvas node stay unconnected.
+    """
+    if document.get('kind') != 'timeline' or not new_slot_ids:
+        return
+    snapshot = ProjectSnapshot.model_validate(data)
+    visible = visible_item_ids(snapshot)
+    connections = list(document.get('inputConnections') or [])
+    used_sources = {str(value['sourceId']) for value in connections}
+    used_slots = {value['slotId'] for value in connections}
+    by_asset = {}
+    for item in snapshot.canvasItems:
+        if item.id not in visible:
+            continue
+        asset = current_asset(snapshot, item)
+        if asset is None or item.kind != asset.kind or 'timeline' not in downstream_kinds(snapshot, item):
+            continue
+        try:
+            CreationCanvas._editable(data, item.id)
+        except ContractError:
+            continue
+        by_asset.setdefault(_asset_key(asset_ref(asset)), []).append(item)
+    for track in document['data']['tracks']:
+        for clip in track['clips']:
+            if clip['id'] not in new_slot_ids or clip['id'] in used_slots:
+                continue
+            candidates = by_asset.get(_asset_key(AssetRef.model_validate(clip['resource']['asset'])), [])
+            if len(candidates) != 1:
+                continue
+            source = candidates[0]
+            if str(source.id) in used_sources:
+                continue
+            connections.append(dict(id=str(uuid4()), sourceId=str(source.id), slotId=clip['id'],
+                                    asset=asset_ref(current_asset(snapshot, source)).model_dump(mode='json')))
+            used_sources.add(str(source.id))
+            used_slots.add(clip['id'])
+    document['inputConnections'] = connections
+
+
 class CreationCanvas:
     def __init__(self, projects):
         self.projects = projects
@@ -267,6 +323,15 @@ class CreationCanvas:
             previous = previous_specs.get(spec['id'])
             if spec['promptContent'] is not None and (previous is None or any(spec[key] != previous[key] for key in ('prompt', 'promptContent'))):
                 spec['prompt'] = prompt_projection(data, spec)
+        # Bind after every mutation in this transaction so a later canvas.show
+        # in the same batch can still identify a unique visible source.
+        previous_docs = {str(doc.id): doc.model_dump(mode='json') for doc in before.editorDocuments}
+        for document in data['editorDocuments']:
+            prior = previous_docs.get(str(document['id']))
+            bind_unique_timeline_sources(
+                data, document,
+                new_slot_ids=_timeline_clip_ids(document) - _timeline_clip_ids(prior or {}),
+            )
         # One revision per object per atomic transaction, regardless of how many
         # semantic operations touch it. New objects always begin at revision 1.
         for collection in COLLECTIONS.values():
@@ -401,13 +466,24 @@ class CreationCanvas:
         for ref in (*sources, payload.asset):
             self._available(self.assets._reference(snapshot, ref))
         asset = self._get(data, 'asset', output.id)
-        asset['provenance'] = dict(source='rendered', editorDocumentId=str(doc.id), editorRevision=doc.revision,
+        existing = next((i for i in snapshot.canvasItems if i.id == payload.outputId), None)
+        if existing is not None:
+            if payload.expectedOutputRevision is None:
+                raise ContractError('revision_conflict', '输出节点已存在，请提供其当前版本。', payload.outputId)
+            target = self._editable(data, payload.outputId)
+            previous = current_asset(snapshot, existing)
+            if (existing.kind != 'video' or existing.binding.role != 'material' or previous is None
+                    or previous.provenance.source != 'rendered' or previous.provenance.editorDocumentId != doc.id
+                    or previous.provenance.sourceItemId not in {None, payload.itemId}):
+                raise ContractError('role_restricted', '输出节点不属于当前时间线。', payload.outputId)
+            target['binding'] = dict(role='material', objectRef=payload.asset.model_dump(mode='json'))
+        else:
+            result = VideoCanvasItem(id=payload.outputId, projectId=snapshot.project.id, kind='video', title=payload.title,
+                position=payload.position, binding=dict(role='material', objectRef=payload.asset))
+            data['canvasItems'].append(result.model_dump(mode='json'))
+        asset['provenance'] = dict(source='rendered', sourceItemId=str(payload.itemId),
+                                  editorDocumentId=str(doc.id), editorRevision=doc.revision,
                                   sources=[ref.model_dump(mode='json') for ref in sources])
-        if any(i['id'] == str(payload.outputId) for i in data['canvasItems']):
-            raise ContractError('invalid_input', '输出节点标识已存在。', payload.outputId)
-        result = VideoCanvasItem(id=payload.outputId, projectId=snapshot.project.id, kind='video', title=payload.title,
-            position=payload.position, binding=dict(role='material', objectRef=payload.asset))
-        data['canvasItems'].append(result.model_dump(mode='json'))
 
     def _mutate(self, data, kind, payload):
         value = payload.model_dump(mode='json', exclude_unset=True)
@@ -447,8 +523,12 @@ class CreationCanvas:
                 if (ref and str(ref.get('id')) == str(obj['id'])) or attached:
                     self._editable(data, item['id'])
             old.update(obj)
+        elif kind == 'canvas.layoutRuns':
+            pass  # The commit arranges the authoritative canvas after validating edits.
         elif kind == 'canvas.show':
             obj = payload.item.model_dump(mode='json')
+            if obj.get('autoLayout') == 'run' and obj['parentId'] is not None:
+                raise ContractError('canvas_run_layout_group', '自动排列只适用于顶层分组。', payload.item.id)
             if str(obj['projectId']) != str(data['project']['id']):
                 raise ContractError('invalid_input', '节点不属于当前工程。')
             old = next((o for o in data['canvasItems'] if o['id'] == obj['id']), None)
@@ -480,7 +560,18 @@ class CreationCanvas:
                 self._editable(data, move.itemId)['position'] = move.position.model_dump()
         elif kind == 'canvas.update':
             item = self._editable(data, payload.itemId, unlocking=value.get('locked') is False)
+            layout = value.pop('autoLayout', None)
+            if layout is not None and item['kind'] != 'group':
+                raise ContractError('canvas_run_layout_group', '自动排列只适用于顶层分组。', payload.itemId)
+            if layout == 'run':
+                item['autoLayout'] = 'run'
+            elif layout == 'free':
+                item.pop('autoLayout', None)
             item.update({key: val for key, val in value.items() if key != 'itemId' and (val is not None or key == 'parentId')})
+            if item.get('autoLayout') == 'run' and item['parentId'] is not None:
+                raise ContractError('canvas_run_layout_group', '自动排列只适用于顶层分组。', payload.itemId)
+            if item.get('color') == '':
+                item.pop('color')
         elif kind == 'canvas.hide':
             self._editable(data, payload.itemId)['visible'] = False
         elif kind == 'canvas.materialize':
@@ -652,6 +743,67 @@ class CreationCanvas:
                 'errorDetails', 'technicalCheck', 'cancelRequested', 'adopted', 'asset'}) for job in jobs],
             'asset': asset.model_dump(mode='json') if asset else None}
 
+    TERMINAL_JOB_STATES = frozenset({'succeeded', 'failed', 'cancelled', 'interrupted'})
+
+    def job_states(self, project_id: UUID, object_ids: tuple[UUID, ...] = ()) -> dict:
+        """Read the requested jobs and their deliveries from one snapshot; unfinished jobs when none are named."""
+        snapshot = self.projects.snapshot(project_id)
+        jobs = {job.id: job for job in snapshot.jobs}
+        if object_ids:
+            missing = [str(identity) for identity in object_ids if identity not in jobs]
+            if missing:
+                raise ContractError('missing_object', '未找到该对象或历史版本。', missing[0])
+            selected = [jobs[identity] for identity in object_ids]
+        else:
+            selected = [job for job in snapshot.jobs if job.status not in self.TERMINAL_JOB_STATES]
+        results_by_asset = {}
+        for result in snapshot.results:
+            results_by_asset.setdefault(result.asset.assetId, []).append(result)
+        adopted_results = {spec.currentResultId for spec in snapshot.generationSpecs if spec.currentResultId}
+        views = []
+        for job in selected:
+            view = job.model_dump(mode='json', include={'id', 'revision', 'status', 'phase', 'asset',
+                'errorDetails', 'recovery', 'resumeAllowed', 'cancelRequested', 'adopted', 'originItemId',
+                'externalTaskId', 'createdAt'})
+            if job.status == 'succeeded' and job.asset:
+                results = results_by_asset.get(job.asset.assetId, ())
+                specs = {result.specId for result in results if result.id in adopted_results}
+                items = [item for item in snapshot.canvasItems if
+                    (item.binding.role == 'generation' and item.binding.objectRef.id in specs
+                     and not item.binding.materialOverride) or
+                    (item.binding.role == 'material' and item.binding.objectRef.assetId == job.asset.assetId)]
+                view['delivery'] = {'registered': True, 'asset': view['asset'],
+                    'adopted': any(result.id in adopted_results for result in results),
+                    'canvasItems': [item.model_dump(mode='json', include={'id', 'revision', 'visible',
+                        'position', 'width', 'height'}) for item in items], 'guidance': DELIVERY_GUIDANCE}
+            views.append(view)
+        return {'jobs': views, 'terminal': all(job.status in self.TERMINAL_JOB_STATES for job in selected)}
+
+    def unfinished_jobs(self, project_id: UUID) -> tuple[UUID, ...]:
+        """The wait group a caller means by "everything that is still running now".
+
+        A wait is one interaction, so this is read once at its start. Re-reading
+        it on every poll would drop each job the moment it settles, and the
+        caller would never learn which of them failed.
+        """
+        return tuple(job.id for job in self.projects.snapshot(project_id).jobs
+                     if job.status not in self.TERMINAL_JOB_STATES)
+
+    async def wait_jobs(self, project_id: UUID, object_ids: tuple[UUID, ...] = (), wait_seconds: float = 0,
+                        until: str = 'all') -> dict:
+        """Answer for a whole set of jobs with at most one snapshot read per poll tick."""
+        group = object_ids or await asyncio.to_thread(self.unfinished_jobs, project_id)
+        deadline = asyncio.get_running_loop().time() + wait_seconds
+        while True:
+            state = await asyncio.to_thread(self.job_states, project_id, group)
+            jobs = state['jobs']
+            settled = state['terminal'] or (bool(jobs) and until == 'any' and any(
+                job['status'] in self.TERMINAL_JOB_STATES for job in jobs))
+            remaining = deadline - asyncio.get_running_loop().time()
+            if settled or remaining <= 0:
+                return state
+            await asyncio.sleep(min(0.5, remaining))
+
     async def wait_item_status(self, project_id: UUID, item_id: UUID, wait_seconds: float = 0) -> dict:
         current = await asyncio.to_thread(self.item_status, project_id, item_id)
         deadline = asyncio.get_running_loop().time() + wait_seconds
@@ -686,6 +838,24 @@ class CreationCanvas:
             return value
 
         return check_asset
+
+    def text_contents(self, snapshot):
+        """Text shown by canvas items, read with the snapshot that opens the canvas.
+
+        An unreadable body is left out so only that item reports it.
+        """
+        contents = {}
+        for item in snapshot.canvasItems:
+            asset = current_asset(snapshot, item)
+            if asset is None or asset.kind != 'text' or str(asset.id) in contents:
+                continue
+            try:
+                stream, _ = self.assets.open_media(asset.projectId, asset.id, snapshot=snapshot)
+                with stream:
+                    contents[str(asset.id)] = stream.read().decode('utf-8-sig', 'replace')
+            except (ContractError, ProjectError, OSError):
+                continue
+        return contents
 
     def reference_edges(self, project_id, snapshot=None, check_asset=None):
         """Authoritative canvas reference states for one snapshot.
@@ -769,6 +939,8 @@ class CreationCanvas:
     async def query(self, query: Query) -> JsonValue:
         if query.type == 'canvas.status':
             return await self.wait_item_status(query.projectId, query.objectId, query.waitSeconds)
+        if query.type == 'job.status':
+            return await self.wait_jobs(query.projectId, query.objectIds, query.waitSeconds, query.until)
         if query.type == 'asset.preview':
             target = self.projects.local.state_dir / 'previews' / str(query.projectId)
             return await asyncio.to_thread(CreationAssets(self.projects).preview, query.projectId, query.objectId, target)
