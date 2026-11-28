@@ -9,7 +9,8 @@ const OverviewItem = memo(function OverviewItem({ row, selected, onSelect }: {
 }) {
   const t = useT();
   const status = row.status ? t(TURN_STATUS_KEYS[row.status]) : t("trace.turn.duration.unavailable");
-  const duration = row.kind === "running" ? t(TURN_STATUS_KEYS.streaming)
+  // A running turn has only its status badge: no bar and no duration text.
+  const duration = row.kind === "running" ? ""
     : formatTurnDuration(row.durationMs) ?? t("trace.turn.duration.unavailable");
   const label = [t("trace.overview.select", { number: row.number }), status,
     row.kind === "timed" ? duration : row.kind === "unavailable" ? t("trace.turn.duration.unavailable") : "",

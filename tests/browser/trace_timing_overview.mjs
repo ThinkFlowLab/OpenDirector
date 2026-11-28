@@ -321,9 +321,16 @@ try {
       await running.goto(traceUrl(projectId, conversationId, first));
       await until(() => rows(running).count(), (count) => count === 4, "Running overview lists four turns");
       const row = rows(running).nth(3);
-      assert.equal((await row.locator(".cw-trace-overview-value").textContent()).trim(), words.running);
-      assert.equal(await row.locator(".cw-trace-overview-bar").count(), 0, "No bar for a running turn");
-      assert.ok((await row.getAttribute("aria-label")).startsWith(`${words.select(4)}, ${words.running}`));
+      // Running appears once: in the status badge only. No duration text, no number, no bar or zero marker.
+      const occurrences = (text) => text.split(words.running).length - 1;
+      assert.equal(occurrences(await row.innerText()), 1, "Running is shown exactly once in the row");
+      assert.equal((await row.locator(".cw-trace-badge").textContent()).trim(), words.running);
+      assert.equal((await row.locator(".cw-trace-overview-value").textContent()).trim(), "", "No duration text for a running turn");
+      assert.doesNotMatch(await row.innerText(), /\d+(?:\.\d+)?\s*(?:ms|s)\b|\d+m \d+s|\d+h \d+m/, "No duration number for a running turn");
+      assert.equal(await row.locator(".cw-trace-overview-bar, .cw-trace-overview-zero").count(), 0, "No bar for a running turn");
+      const runningLabel = await row.getAttribute("aria-label");
+      assert.ok(runningLabel.startsWith(`${words.select(4)}, ${words.running}`), runningLabel);
+      assert.equal(occurrences(runningLabel), 1, "Running is announced exactly once");
       assert.deepEqual((await values(running)).slice(0, 3), expected);
       const before = polls.length;
       await until(async () => polls.length, (count) => count >= before + 2, "Polling continues while running", 10000);

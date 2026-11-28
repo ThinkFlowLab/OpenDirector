@@ -2,7 +2,7 @@
 
 [中文](turn-timing.zh-CN.md)
 
-Issue #468. This page records what "turn duration" means for the Assistant (Slice A, implemented) and the design of the Trace Timing Overview (Slice B, design only, not implemented). The code in `apps/api/src/opendirector_api/agent.py` (`Conversations.update`, `Conversations.trace`) and `src/canvas/turnTiming.ts` is the source of truth for Slice A.
+Issue #468. This page records what "turn duration" means for the Assistant (Slice A, implemented) and the Trace Timing Overview (Slice B, implemented). The code in `apps/api/src/opendirector_api/agent.py` (`Conversations.update`, `Conversations.trace`) and `src/canvas/turnTiming.ts` is the source of truth for Slice A; `src/canvas/traceTimingOverview.ts` and `src/canvas/TraceTimingOverview.tsx` are the source of truth for Slice B.
 
 ## Slice A: recorded timing
 
@@ -44,9 +44,9 @@ Each assistant message in `agent-runs/conversation.json` can carry:
 
 `src/canvas/turnTiming.ts` is the only formatter. `820 ms`, `12.4 s`, `2m 5s`, `1h 2m`. `AssistantReply.tsx` shows `status · duration` only when a duration exists. `AssistantTracePage.tsx` shows the duration, or `Unavailable`, for every turn that is not running.
 
-## Slice B design: Trace Timing Overview
+## Slice B: Trace Timing Overview
 
-Status: design only. Slice B adds no backend field, endpoint or event timestamp.
+Status: implemented in `src/canvas/traceTimingOverview.ts` (pure model) and `src/canvas/TraceTimingOverview.tsx` (component). Slice B adds no backend field, endpoint or event timestamp.
 
 ### Choice: Per-turn Duration Comparison
 
@@ -54,8 +54,8 @@ The overview is a **Per-turn Duration Comparison**. It does not draw a wall-cloc
 
 ### Component layering
 
-1. `traceTiming.ts`: a pure model. Input: the `turns` array from the trace response. Output: one row per turn with `id`, `number`, `runtime`, `status`, `durationMs | null`, `ratio | null`. No React, no fetching, unit tested.
-2. `TraceTimingOverview`: a presentational component rendered inside `AssistantTracePage`. It receives the rows and a `reveal(turnId)` callback. It does not fetch.
+1. `traceTimingOverview.ts`: a pure model. Input: the `turns` array from the trace response. Output: one row per turn with `id`, `number`, `status`, `kind`, `durationMs | null`, `fraction | null`, `zero` and `slowest`. No React, no fetching, unit tested.
+2. `TraceTimingOverview.tsx`: a presentational component rendered inside `AssistantTracePage`. It receives the turns, the selected turn ID and the `reveal(turnId)` callback. It does not fetch.
 3. `AssistantTracePage` keeps owning data loading and the existing scroll and open logic. `AssistantPanel.tsx` is not changed.
 
 ### Data source
@@ -64,21 +64,21 @@ Only the existing `GET .../conversations/{id}/trace` response. The overview neve
 
 ### Bar computation
 
-- `ratio = durationMs / max(durationMs)` over the turns of the loaded conversation that have a duration. All bars share one scale.
+- `fraction = durationMs / max(durationMs)` over the turns of the loaded conversation that have a duration. All bars share one scale.
 - The horizontal axis is a duration scale. It is reliable only as relative length. Bars do not align to times of day, and two bars side by side do not imply one started after the other finished.
-- A conversation with one timed turn shows a full-width bar. Zero durations render a minimum-width bar so the turn stays visible.
+- A conversation with one timed turn shows a full-width bar. A zero duration gets a thin marker instead of a bar; any other bar has a minimum visible width.
 - Each bar shows the formatted duration from `formatTurnDuration`.
 
 ### Running and Unknown
 
-- **Running** (`streaming`, live): the bar has no end. It is animated or hatched. Elapsed time is computed from `startedAt` for display only, labelled approximate, and is excluded from `max` so it does not rescale other bars.
-- **Unknown** (no `durationMs`, including legacy and restart-interrupted turns): a hatched placeholder with the label "Unavailable". It is excluded from `max`.
+- **Running** (`streaming`, live): only the status badge. No bar and no elapsed or provisional duration. It is excluded from `max`, so it does not rescale other bars.
+- **Unknown** (no `durationMs`, including legacy and restart-interrupted turns): no bar, with the label "Unavailable". It is excluded from `max`.
 
 ### Interaction
 
 - Click, or Enter or Space on a bar, calls `reveal(turnId)`, which uses the existing logic to scroll to and open that turn.
-- Bars are `button` elements in a list. Each has `aria-label` of the form "Turn N, runtime, status, duration". Arrow-key roving focus is optional.
-- Narrow screens: bars stack below the summary row, labels are truncated, and horizontal scrolling is never required.
+- Bars are `button` elements in a list. Each has an `aria-label` of the form "Select turn N, status, duration", with the status named once. Arrow-key roving focus is not implemented.
+- Narrow screens: the row keeps one line with narrower columns, and horizontal scrolling is never required.
 
 ### Jobs
 
