@@ -1,6 +1,6 @@
 import { useT } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/types";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { traceCategory, isThinkingTokenEstimate, readableTraceValue } from "./traceCategory.ts";
 
@@ -8,6 +8,7 @@ import { turnTiming, TURN_STATUS_KEYS } from "./turnTiming.ts";
 import { initialTurn, normalizeTrace, runtimeName, traceRuntime, traceSources, type ConversationTurn } from "./traceTurns.ts";
 
 import { readTurnJobs, turnJobView, type TurnJob } from "./traceJobs.ts";
+import TraceTimingOverview from "./TraceTimingOverview.tsx";
 import { downloadFile } from "./assets.ts";
 import { conversationTraceArchive, TraceExportError } from "./traceExport.ts";
 
@@ -301,6 +302,7 @@ function ConversationTrace({ project, conversationId, target, turns }: {
   const t = useT();
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const [loaded, setLoaded] = useState<Set<string>>(() => new Set());
+  const [selected, setSelected] = useState<string | null>(null);
   const placed = useRef(false);
   const initial = initialTurn(turns, target);
   const [exporting, setExporting] = useState(false);
@@ -348,12 +350,16 @@ function ConversationTrace({ project, conversationId, target, turns }: {
       if (value) next.add(id); else next.delete(id);
       return next;
     });
+    // Opening selects the turn. Closing keeps the selection: it marks the last turn the user worked on, and the turnnav shows open state.
+    if (value) setSelected(id);
     if (value) setLoaded((previous) => previous.has(id) ? previous : new Set(previous).add(id));
   }
-  function reveal(id: string) {
+  // Only calls state setters, so it is stable and memoized overview rows are not re-rendered by it.
+  const reveal = useCallback((id: string) => {
+    setSelected(id);
     toggle(id, true);
     window.requestAnimationFrame(() => document.getElementById(`turn-${id}`)?.scrollIntoView({ block: "start" }));
-  }
+  }, []);
   useEffect(() => {
     if (placed.current || !initial) return;
     placed.current = true;
@@ -370,6 +376,7 @@ function ConversationTrace({ project, conversationId, target, turns }: {
         {running && !exporting && <span role="status">{t("trace.export.blockedRunning")}</span>}
         {exportError && <span role="alert">{exportError}</span>}
       </div>
+      <TraceTimingOverview turns={turns} selected={selected} onSelect={reveal} />
       <nav className="cw-trace-turnnav" aria-label={t("trace.turns.nav")}>
         {turns.map((item) => (
           <button key={item.id} type="button" aria-pressed={open.has(item.id)}

@@ -95,6 +95,7 @@
 .cw-trace-badge.is-turn-streaming { background: #30415c; color: #a6c7ff; }
 .cw-trace-badge.is-turn-complete { background: #254034; color: #91d6ab; }
 .cw-trace-badge.is-turn-stopped { background: #473829; color: #f0c38b; }
+.cw-trace-badge.is-turn-unknown { background: #3a3f48; color: #c3c9d4; }
 .cw-trace-badge.is-turn-interrupted { background: #4d2a2a; color: #f0a3a3; }
 @media (max-width: 600px) {
   .cw-trace-turn > summary { grid-template-columns: auto minmax(0, 1fr); }
@@ -106,3 +107,25 @@
 .cw-trace-export button:disabled { cursor: not-allowed; opacity: .6; }
 .cw-trace-export span[role="status"] { color: #e4c88a; }
 .cw-trace-export span[role="alert"] { color: #f0a3a3; }
+
+/* Timing overview: one row per turn, bar length is linear in the persisted durationMs. */
+.cw-trace-overview { padding: 8px 20px; border-bottom: 1px solid #3c3c3c; }
+.cw-trace-overview h2 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: #bbb; }
+.cw-trace-overview p { margin: 0 0 6px; color: #999; font-size: 12px; }
+.cw-trace-overview-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; overflow-x: hidden; }
+.cw-trace-overview-row { display: grid; grid-template-columns: 2.5em minmax(5em, auto) minmax(0, 1fr) minmax(5em, auto); align-items: center; gap: 8px; width: 100%; min-height: 28px; box-sizing: border-box; border: 1px solid transparent; border-radius: 4px; padding: 2px 8px; background: transparent; color: #bbb; font: inherit; text-align: left; cursor: pointer; }
+.cw-trace-overview-row:hover { background: #303030; }
+.cw-trace-overview-row[aria-pressed="true"] { border-color: #4d5d6d; background: #303c48; color: #d6e8f7; }
+.cw-trace-overview-row:focus-visible { outline: 2px solid #8eb7fa; outline-offset: 1px; }
+.cw-trace-overview-number { font-variant-numeric: tabular-nums; }
+.cw-trace-overview-row .cw-trace-badge { justify-self: start; white-space: nowrap; }
+.cw-trace-overview-track { position: relative; display: block; height: 8px; min-width: 0; border-radius: 4px; background: #333; overflow: hidden; }
+.cw-trace-overview-bar { display: block; height: 100%; min-width: 2%; border-radius: 4px; background: #6f9bd8; }
+.cw-trace-overview-zero { position: absolute; left: 0; top: 0; width: 2px; height: 100%; background: #bbb; }
+.cw-trace-overview-value { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cw-trace-overview-row.is-slowest .cw-trace-overview-bar { background: #f0c38b; }
+.cw-trace-overview-row.is-slowest .cw-trace-overview-value, .cw-trace-overview-flag { color: #f0c38b; }
+@media (max-width: 600px) {
+  .cw-trace-overview { padding: 8px 12px; }
+  .cw-trace-overview-row { grid-template-columns: 2em minmax(0, auto) minmax(0, 1fr) auto; gap: 6px; padding: 2px 4px; }
+}

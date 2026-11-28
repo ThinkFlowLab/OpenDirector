@@ -60,5 +60,10 @@ export const trace = {
   "trace.waiting": "等待首条轨迹…",
   "trace.notFound": "该轮没有此类轨迹。",
   "trace.loadFailed": "轨迹加载失败。",
-  "trace.turn.duration.unavailable": "不可用"
+  "trace.turn.duration.unavailable": "不可用",
+  "trace.overview.title": "耗时概览",
+  "trace.overview.select": "选择第 {number} 轮",
+  "trace.overview.noData": "暂无耗时数据",
+  "trace.overview.slowest": "最慢的一轮",
+  "trace.overview.zero": "耗时为零"
 } as const;

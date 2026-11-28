@@ -2,7 +2,7 @@
 
 [English](turn-timing.md)
 
-Issue #468。本文记录 Assistant“轮次耗时”的含义（Slice A，已实现）和 Trace 计时概览的设计（Slice B，仅设计，未实现）。Slice A 以 `apps/api/src/opendirector_api/agent.py`（`Conversations.update`、`Conversations.trace`）和 `src/canvas/turnTiming.ts` 的代码为准。
+Issue #468。本文记录 Assistant“轮次耗时”的含义（Slice A，已实现）和 Trace 计时概览（Slice B，已实现）。Slice A 以 `apps/api/src/opendirector_api/agent.py`（`Conversations.update`、`Conversations.trace`）和 `src/canvas/turnTiming.ts` 的代码为准；Slice B 以 `src/canvas/traceTimingOverview.ts` 和 `src/canvas/TraceTimingOverview.tsx` 的代码为准。
 
 ## Slice A：已记录的计时
 
@@ -44,9 +44,9 @@ Issue #468。本文记录 Assistant“轮次耗时”的含义（Slice A，已�
 
 `src/canvas/turnTiming.ts` 是唯一的格式化入口：`820 ms`、`12.4 s`、`2m 5s`、`1h 2m`。`AssistantReply.tsx` 仅在存在时长时显示“状态 · 时长”。`AssistantTracePage.tsx` 对每个非进行中的轮次显示时长或“不可用”。
 
-## Slice B 设计：Trace 计时概览
+## Slice B：Trace 计时概览
 
-状态：仅设计。Slice B 不新增后端字段、接口或事件时间戳。
+状态：已实现，入口为 `src/canvas/traceTimingOverview.ts`（纯模型）和 `src/canvas/TraceTimingOverview.tsx`（组件）。Slice B 不新增后端字段、接口或事件时间戳。
 
 ### 选择：逐轮耗时对比
 
@@ -54,8 +54,8 @@ Issue #468。本文记录 Assistant“轮次耗时”的含义（Slice A，已�
 
 ### 组件分层
 
-1. `traceTiming.ts`：纯模型。输入为 trace 响应中的 `turns`，输出每个轮次一行：`id`、`number`、`runtime`、`status`、`durationMs | null`、`ratio | null`。不含 React 和请求，带单元测试。
-2. `TraceTimingOverview`：渲染在 `AssistantTracePage` 内的展示组件。接收行数据和 `reveal(turnId)` 回调，不发起请求。
+1. `traceTimingOverview.ts`：纯模型。输入为 trace 响应中的 `turns`，输出每个轮次一行：`id`、`number`、`status`、`kind`、`durationMs | null`、`fraction | null`、`zero` 和 `slowest`。不含 React 和请求，带单元测试。
+2. `TraceTimingOverview.tsx`：渲染在 `AssistantTracePage` 内的展示组件。接收轮次数据、选中的轮次 ID 和 `reveal(turnId)` 回调，不发起请求。
 3. `AssistantTracePage` 继续负责数据加载以及现有的滚动与展开逻辑。不修改 `AssistantPanel.tsx`。
 
 ### 数据来源
@@ -64,21 +64,21 @@ Issue #468。本文记录 Assistant“轮次耗时”的含义（Slice A，已�
 
 ### 条形计算
 
-- `ratio = durationMs / max(durationMs)`，范围是已加载会话中有时长的轮次，所有条形共用同一比例尺。
+- `fraction = durationMs / max(durationMs)`，范围是已加载会话中有时长的轮次，所有条形共用同一比例尺。
 - 横轴是时长刻度，只有相对长度可靠。条形不对应具体时刻，并排的两个条形也不表示一个在另一个结束后才开始。
-- 只有一个有时长的轮次时显示满宽条形。时长为 0 时显示最小宽度条形，使该轮次仍可见。
+- 只有一个有时长的轮次时显示满宽条形。时长为 0 时显示细标记而不是条形，其他条形有最小可见宽度。
 - 每个条形显示 `formatTurnDuration` 格式化后的时长。
 
 ### 进行中与未知
 
-- **进行中**（`streaming`，实时）：条形没有终点，使用动画或斜纹。已用时间仅用于显示，由 `startedAt` 计算并标注为近似值，且不计入 `max`，不会使其他条形重新缩放。
-- **未知**（没有 `durationMs`，包括旧数据和重启中断的轮次）：斜纹占位并标注“不可用”，不计入 `max`。
+- **进行中**（`streaming`，实时）：只显示状态徽标，不绘制条形，也不显示已用时间或临时时长。不计入 `max`，不会使其他条形重新缩放。
+- **未知**（没有 `durationMs`，包括旧数据和重启中断的轮次）：不绘制条形，标注“不可用”，不计入 `max`。
 
 ### 交互
 
 - 点击条形，或在条形上按 Enter 或 Space，调用 `reveal(turnId)`，沿用现有逻辑滚动到并展开该轮次。
-- 条形是列表中的 `button` 元素，`aria-label` 形如“Turn N，运行时，状态，时长”。方向键漫游焦点为可选项。
-- 窄屏：条形堆叠在摘要行下方，标签截断，永远不需要横向滚动。
+- 条形是列表中的 `button` 元素，`aria-label` 形如“选择第 N 轮，状态，时长”，状态只出现一次。未实现方向键漫游焦点。
+- 窄屏：每行保持一行，列宽收窄，永远不需要横向滚动。
 
 ### Jobs
 
@@ -103,3 +103,16 @@ PR #469（issue #449）记录一个轮次的时间花在哪里。两项功能度
 | 读取方 | `scripts/bench_turn_timing.py` | Trace API、Chat 与 Trace 界面 |
 
 两个窗口的终点几乎相同，起点相差 `produce()` 中接受前的工作（校验、模型可用性检查、`begin` 写入），通常为毫秒级，数值不要求完全一致，也不互相推导。各自保留单调时钟：#469 的时钟在 `produce()` 和工具事件账本中，本工作的时钟在 `Conversations.update`，那里是唯一同时看到接受与 finish 写入的位置。持久化不冲突：#469 写独立文件，本工作写消息。UI 不展示 `turnSeconds`，账本不读取 `durationMs`。
+
+### Trace 耗时概览
+
+对话 Trace 页面在轮次列表上方显示紧凑的耗时概览。每个轮次对应一个按钮行，包含编号、状态、条形和耗时。条形长度相对已结束轮次中最长的一个按线性比例绘制。概览只读取各轮已持久化的 `durationMs`，不使用 `startedAt`/`finishedAt`，也不加载任何 Trace 日志。
+
+- 运行中的轮次显示“运行中”，不绘制条形。`durationMs` 缺失或无效时显示“不可用”，不绘制条形。
+- 已停止和已中断的轮次在 `durationMs` 有效时显示状态与条形。
+- 耗时为零时显示细标记而不是条形，其他条形有最小可见宽度。
+- 有两个及以上带耗时的轮次时，最慢的一轮以强调色、符号和无障碍文本标出。
+- 选中某行（点击、Enter、空格）复用现有的定位逻辑：展开该轮、懒加载其 Trace 并滚动到位。
+- 若没有任何轮次有有效耗时，概览显示“暂无耗时数据”，轮次列表照常可用。
+
+逻辑位于 `src/canvas/traceTimingOverview.ts`。概览不引入 #449 的任何指标。
