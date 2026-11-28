@@ -128,6 +128,12 @@
       "note": "First launch: assistant prerequisite, task-specific model setup and direct access to examples."
     },
     {
+      "file": "model_connection.mjs",
+      "previewSafe": true,
+      "lanes": ["gate"],
+      "note": "One connection configures several modalities in one pass with per-kind discovery, one providerId and a reported per-modality failure."
+    },
+    {
       "file": "model_editor_hosts.mjs",
       "previewSafe": true,
       "lanes": ["gate"],

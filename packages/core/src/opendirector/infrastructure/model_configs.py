@@ -173,7 +173,7 @@ class ModelConfigs:
 
     def save_many(self, kind: str, url: str, model_ids: list[str], api_key: str,
                   config_id: str | None = None, *, connection_type='api', protocol=None,
-                  auth_mode=None, proxy_mode=None, video_adapter=None, video_capabilities=None, input_modalities=None, model_options=None, capabilities_supplied=False, capability_auto_check=None) -> list[dict]:
+                  auth_mode=None, proxy_mode=None, video_adapter=None, video_capabilities=None, input_modalities=None, model_options=None, capabilities_supplied=False, capability_auto_check=None, provider_id=None) -> list[dict]:
         if capability_auto_check is not None and type(capability_auto_check) is not bool:
             raise ProjectError('自动能力检查设置必须为布尔值。')
         if kind not in MODEL_KINDS or not 1 <= len(model_ids) <= 200:
@@ -202,9 +202,14 @@ class ModelConfigs:
                 if not existing or existing['url'] != fields[0]['url'] or not existing['apiKey']:
                     raise ProjectError('请填写该服务的 API Key；新地址不能复用原地址的密钥。')
                 key = existing['apiKey']
-            provider_id = existing.get('providerId', existing['id']) if existing else str(uuid4())
+            provider_id = provider_id or (existing.get('providerId', existing['id']) if existing else str(uuid4()))
             auto_check = capability_auto_check if capability_auto_check is not None else (existing or {}).get('capabilityAutoCheck')
-            previous = [item for item in models if item.get('providerId') == provider_id or item['id'] == config_id]
+            # A connection may hold several kinds, so only this kind's models are
+            # replaced; peers of other kinds keep their rows and only inherit the
+            # connection fields below.
+            previous = [item for item in models
+                        if (item.get('providerId') == provider_id and (item['kind'] == kind or (legacy_segmentation and item['id'] == config_id)))
+                        or item['id'] == config_id]
             peers = {item['modelId']: item for item in previous}
             saved = []
             for field in fields:
@@ -233,6 +238,47 @@ class ModelConfigs:
                         item['capabilityAutoCheck'] = auto_check
             self._write(remaining + saved)
             return [self._public(item) for item in saved]
+
+    def save_connection(self, url: str, api_key: str, entries: list[dict], *, connection_type='api', auth_mode=None,
+                         proxy_mode=None, capability_auto_check=None, provider_id=None) -> dict:
+        """Save several modalities of one address and credential as one connection.
+
+        Entries commit independently: a rejected modality does not roll back the
+        ones that were saved, and the receipt reports both sets so callers can
+        retry only the failures.
+        """
+        if not 1 <= len(entries) <= len(MODEL_KINDS):
+            raise ProjectError('请选择 1—5 个模态。')
+        if len({entry['kind'] for entry in entries}) != len(entries):
+            raise ProjectError('同一连接中每个模态只能出现一次。')
+        if capability_auto_check is not None and type(capability_auto_check) is not bool:
+            raise ProjectError('自动能力检查设置必须为布尔值。')
+        model_fields(url, 'connection', api_key)
+        kinds = [item['kind'] for item in entries]
+        if len(set(kinds)) != len(kinds):
+            raise ProjectError('同一连接中每个模态只能出现一次。')
+        with self.lock:
+            existing = self._read()
+            reused = next((item for item in existing if provider_id and item.get('providerId') == str(provider_id)), None)
+            if provider_id and reused is None:
+                raise ProjectError('连接已被删除，请重新加载。', 404)
+            shared = str(provider_id) if provider_id else str(uuid4())
+        saved, rejected = [], []
+        for entry in entries:
+            try:
+                saved.extend(self.save_many(entry['kind'], url, entry['modelIds'], api_key, provider_id=shared,
+                                            connection_type=connection_type, protocol=entry.get('protocol'),
+                                            auth_mode=auth_mode, proxy_mode=proxy_mode,
+                                            model_options=entry.get('modelOptions'),
+                                            capability_auto_check=capability_auto_check))
+            except ProjectError as error:
+                rejected.append({'kind': entry['kind'], 'code': getattr(error, 'code', None) or 'connection_entry_invalid',
+                                 'message': str(error)})
+        if not saved:
+            raise ProjectError('这个连接没有保存任何模型。', 400)
+        with self.lock:
+            peers = [item for item in self._read() if item.get('providerId') == shared]
+        return {'providerId': shared, 'saved': saved, 'rejected': rejected, 'kinds': sorted({item['kind'] for item in peers})}
 
     def delete_service(self, config_id: str) -> None:
         with self.lock:

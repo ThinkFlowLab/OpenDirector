@@ -72,6 +72,53 @@ export function discoverModels(value: ModelConfigInput, configId?: string) {
   );
 }
 
+export type ConnectionKind = Exclude<ModelKind, "vision">;
+
+export interface ConnectionDiscoveryRequest {
+  url: string;
+  apiKey: string;
+  connectionType: "api" | "self_hosted";
+  authMode: "none" | "bearer";
+  proxyMode: "system" | "direct";
+  kinds: { kind: ConnectionKind; protocol: NonNullable<ModelConfig["protocol"]> }[];
+}
+
+export interface ConnectionDiscoveryResult {
+  kind: ConnectionKind;
+  protocol: NonNullable<ModelConfig["protocol"]> | null;
+  models: string[];
+  error: { code: string; message: string } | null;
+}
+
+export function discoverConnectionModels(value: ConnectionDiscoveryRequest) {
+  return request<{ results: ConnectionDiscoveryResult[] }>(
+    "/model-configs/discover-many",
+    json("POST", value),
+  );
+}
+
+export interface ConnectionSaveRequest {
+  url: string;
+  apiKey: string;
+  connectionType: "api" | "self_hosted";
+  authMode: "none" | "bearer";
+  proxyMode: "system" | "direct";
+  capabilityAutoCheck?: boolean | null;
+  providerId?: string;
+  entries: {
+    kind: ConnectionKind;
+    protocol: NonNullable<ModelConfig["protocol"]>;
+    modelIds: string[];
+  }[];
+}
+
+export interface ConnectionSaveReceipt {
+  providerId: string;
+  saved: ModelConfig[];
+  rejected: { kind: ConnectionKind; code: string; message: string }[];
+  kinds: ConnectionKind[];
+}
+
 export function testAgentModel(value: ModelConfigInput, configId?: string) {
   return request<{ elapsedMs: number }>(
     "/model-configs/test-agent",
@@ -292,6 +339,17 @@ export function useBackendModels() {
     await refresh();
     void refreshAvailability([saved.id]);
   };
+  const saveConnection = async (value: ConnectionSaveRequest) => {
+    epoch.current += 1;
+    const receipt = await request<ConnectionSaveReceipt>(
+      "/model-configs/connections",
+      json("POST", value),
+    );
+    await refresh();
+    void refreshAvailability(receipt.saved.map((model) => model.id));
+    return receipt;
+  };
+
   const saveMany = async (
     value: ModelConfigInput,
     modelIds: string[],
@@ -341,6 +399,8 @@ export function useBackendModels() {
     refresh,
     save,
     saveMany,
+    saveConnection,
+    discoverConnectionModels,
     remove,
     removeService,
     updateSettings,

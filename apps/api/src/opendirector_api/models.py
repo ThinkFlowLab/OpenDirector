@@ -12,6 +12,9 @@ class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+Protocol = Literal['openai', 'volcengine', 'higgsfield_open', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
+
+
 class Session(Model):
     projectId: UUID
 
@@ -25,7 +28,7 @@ class AssetSource(Model):
 
 class ModelConnection(Model):
     connectionType: Literal['api', 'self_hosted'] = 'api'
-    protocol: Literal['openai', 'volcengine', 'higgsfield_open', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score'] | None = None
+    protocol: "Protocol" = None
     authMode: Literal['none', 'bearer'] | None = None
     proxyMode: Literal['system', 'direct'] | None = None
     capabilityAutoCheck: bool | None = Field(default=None, strict=True, exclude_if=lambda value: value is None)
@@ -62,6 +65,43 @@ class ModelBatchInput(ModelConfigInput):
 class ModelDiscoveryRequest(ModelConfigInput):
     modelId: str = Field(default="", max_length=200)
     configId: UUID | None = None
+
+
+MODEL_KIND = Literal["agent", "image", "video", "audio", "vision"]
+
+
+class ConnectionDiscoveryKind(Model):
+    kind: MODEL_KIND
+    protocol: "Protocol" = None
+
+
+class ConnectionDiscoveryRequest(Model):
+    """Discover models for several modalities of one address and credential."""
+    url: str = Field(max_length=2048)
+    apiKey: SecretStr = SecretStr("")
+    connectionType: Literal['api', 'self_hosted'] = 'api'
+    authMode: Literal['none', 'bearer'] | None = None
+    proxyMode: Literal['system', 'direct'] | None = None
+    kinds: list[ConnectionDiscoveryKind] = Field(min_length=1, max_length=5)
+
+
+class ConnectionEntry(Model):
+    """One modality saved as part of a connection."""
+    kind: MODEL_KIND
+    protocol: "Protocol" = None
+    modelIds: list[str] = Field(min_length=1, max_length=200)
+    modelOptions: dict[str, ModelOptions] = Field(default_factory=dict, max_length=200)
+
+
+class ConnectionSaveRequest(Model):
+    url: str = Field(max_length=2048)
+    apiKey: SecretStr = SecretStr("")
+    connectionType: Literal['api', 'self_hosted'] = 'api'
+    authMode: Literal['none', 'bearer'] | None = None
+    proxyMode: Literal['system', 'direct'] | None = None
+    capabilityAutoCheck: bool | None = Field(default=None, strict=True)
+    providerId: UUID | None = None
+    entries: list[ConnectionEntry] = Field(min_length=1, max_length=5)
 
 
 class AgentModelTest(ModelConfigInput):
